@@ -3,17 +3,7 @@ import L from 'leaflet';
 import { MapContainer, TileLayer, GeoJSON, Marker, Tooltip, ZoomControl, useMap } from 'react-leaflet';
 import { Layers, LocateFixed } from 'lucide-react';
 import { CLASS_STYLE, FLOOD_STYLE, rpsColor } from '../lib/api.js';
-
-const BASEMAPS = {
-  map: {
-    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-  },
-  satellite: {
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics',
-  },
-};
+import { BASEMAPS } from '../lib/tiles.js';
 
 const MALAWI_CENTER = [-13.3, 34.3];
 const size = (learners, bySize) => (bySize ? Math.round(Math.min(28, Math.max(16, 10 + Math.sqrt(learners) / 3))) : 20);
@@ -39,7 +29,7 @@ function FlyTo({ target }) {
 }
 
 export default function MapView({ schools, hazards, selected, onSelect, layers, setLayers }) {
-  const [base, setBase] = useState('map');
+  const [base, setBase] = useState('standard');
   const [showLayers, setShowLayers] = useState(false);
   const [map, setMap] = useState(null);
   const selectedFeature = useMemo(
@@ -49,7 +39,7 @@ export default function MapView({ schools, hazards, selected, onSelect, layers, 
   return (
     <div className="relative h-full w-full">
       <MapContainer ref={setMap} center={MALAWI_CENTER} zoom={6} minZoom={5} scrollWheelZoom zoomControl={false} className="h-full w-full">
-        <TileLayer key={base} {...BASEMAPS[base]} maxZoom={19} />
+        <TileLayer key={base} url={BASEMAPS[base].url} attribution={BASEMAPS[base].attribution} maxZoom={BASEMAPS[base].maxZoom} />
         <ZoomControl position="bottomright" />
 
         {layers.flood && hazards && (
@@ -87,7 +77,7 @@ export default function MapView({ schools, hazards, selected, onSelect, layers, 
       <div className="pointer-events-none absolute right-3 top-3 z-[1000] flex flex-col items-end gap-2">
         <div className="pointer-events-auto flex items-center gap-2">
           <div className="seg shadow-card">
-            {[['map', 'Map'], ['satellite', 'Satellite']].map(([k, label]) => (
+            {Object.entries(BASEMAPS).map(([k, { label }]) => (
               <button key={k} type="button" onClick={() => setBase(k)} className={`seg-btn px-3.5 ${base === k ? 'seg-btn-on' : ''}`}>{label}</button>
             ))}
           </div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import { Crosshair } from 'lucide-react';
+import { BASEMAPS } from '../lib/tiles.js';
 
 const icon = L.divIcon({
   className: 'pin pin-on',
@@ -25,7 +26,6 @@ function Recenter({ lat, lon }) {
 
 export default function LocationPicker({ lat, lon, onChange }) {
   const [gpsMsg, setGpsMsg] = useState('');
-  const [sat, setSat] = useState(true);
   const [recenterKey, setRecenterKey] = useState(0);
   const has = Number.isFinite(lat) && Number.isFinite(lon);
   const round = (n) => Math.round(n * 1e6) / 1e6;
@@ -48,10 +48,7 @@ export default function LocationPicker({ lat, lon, onChange }) {
     <div className="space-y-2">
       <div className="relative h-64 overflow-hidden rounded-xl border border-gray-200">
         <MapContainer center={has ? [lat, lon] : [-13.3, 34.3]} zoom={has ? 13 : 6} className="h-full w-full">
-          <TileLayer key={sat ? 's' : 'm'} url={sat
-            ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-            : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'}
-            attribution={sat ? 'Imagery &copy; Esri' : '&copy; OpenStreetMap &copy; CARTO'} maxZoom={19} />
+          <TileLayer url={BASEMAPS.standard.url} attribution={BASEMAPS.standard.attribution} maxZoom={BASEMAPS.standard.maxZoom} />
           <ClickToMove onPick={(a, b) => onChange(round(a), round(b))} />
           {has && (
             <Marker position={[lat, lon]} icon={icon} draggable
@@ -59,9 +56,6 @@ export default function LocationPicker({ lat, lon, onChange }) {
           )}
           <Recenter key={recenterKey} lat={lat} lon={lon} />
         </MapContainer>
-        <button type="button" onClick={() => setSat((s) => !s)} className="absolute right-2 top-2 z-[1000] rounded-lg bg-white px-2.5 py-1 text-[11px] font-medium shadow-card">
-          {sat ? 'Map' : 'Satellite'}
-        </button>
       </div>
       <div className="flex flex-wrap items-end gap-2">
         <label className="w-32"><span className="label">Latitude</span>
