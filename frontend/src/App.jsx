@@ -12,14 +12,15 @@ import AssessmentForm from './components/AssessmentForm.jsx';
 import FacilityEditor from './components/FacilityEditor.jsx';
 import MyFacility from './components/MyFacility.jsx';
 import About from './components/About.jsx';
-import AuthDialog, { SetNewPassword } from './components/Login.jsx';
+import { SetNewPassword } from './components/Login.jsx';
+import AuthPage from './components/AuthPage.jsx';
 import AdminFacilities from './components/admin/AdminFacilities.jsx';
 import AdminUsers from './components/admin/AdminUsers.jsx';
 
 const REFRESH_MS = 30000;
 
 export default function App() {
-  const { profile, isAdmin, recovering } = useAuth();
+  const { profile, isAdmin, recovering, ready, session } = useAuth();
   const { toast } = useFeedback();
   const [view, setView] = useState('map');
   const [facilities, setFacilities] = useState(null);
@@ -57,6 +58,21 @@ export default function App() {
     const t = setInterval(() => { if (document.visibilityState === 'visible') load(); }, REFRESH_MS);
     return () => clearInterval(t);
   }, [load]);
+
+  // On entry, show the sign-in / join page unless already signed in, opening a shared
+  // facility link, or the visitor chose to browse as a guest in this browser session.
+  const [entryChecked, setEntryChecked] = useState(false);
+  useEffect(() => {
+    if (!ready || entryChecked) return;
+    setEntryChecked(true);
+    let guest = false;
+    try { guest = sessionStorage.getItem('safecom.guest') === '1'; } catch { /* storage blocked */ }
+    if (!session && !guest && !/facility=/.test(window.location.hash)) setAuthOpen('signin');
+  }, [ready, entryChecked, session]);
+  const closeAuth = () => {
+    try { sessionStorage.setItem('safecom.guest', '1'); } catch { /* storage blocked */ }
+    setAuthOpen(null);
+  };
 
   // Admins: count sign-up requests waiting for activation
   useEffect(() => {
@@ -138,7 +154,7 @@ export default function App() {
         <AssessmentForm facility={byId.get(assessing).properties} checklist={checklistFor(byId.get(assessing).properties)} onClose={() => setAssessing(null)}
           onSaved={(r) => { setAssessing(null); load(); toast(r?.spi !== undefined ? `Assessment saved · SPI is now ${r.spi}%` : 'Assessment saved'); }} />
       )}
-      {authOpen && <AuthDialog initial={authOpen} facilities={facilities} onClose={() => setAuthOpen(null)} />}
+      {authOpen && <AuthPage key={authOpen} initial={authOpen} facilities={facilities} onClose={closeAuth} />}
       {recovering && <SetNewPassword />}
     </div>
   );
