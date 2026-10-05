@@ -3,4 +3,46 @@
 @tailwind utilities;
 
 html, body, #root { height: 100%; margin: 0; }
-.leaflet-container { height: 100%; width: 100%; }
+body { @apply bg-canvas font-sans text-[13px] text-gray-900 antialiased; }
+.leaflet-container { height: 100%; width: 100%; font-family: inherit; background: #e9ecef; }
+
+@layer components {
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-[13px] font-medium transition disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-dark { @apply btn bg-ink text-white hover:bg-ink-soft; }
+  .btn-accent { @apply btn bg-accent text-ink hover:brightness-95; }
+  .btn-ghost { @apply btn border border-gray-200 bg-white text-gray-700 hover:bg-gray-50; }
+  .btn-danger { @apply btn border border-red-200 bg-white text-red-600 hover:bg-red-50; }
+  .icon-btn { @apply inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-50; }
+  .input { @apply w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-[13px] outline-none transition placeholder:text-gray-400 focus:border-gray-400 focus:ring-2 focus:ring-gray-100; }
+  .label { @apply mb-1 block text-xs font-medium text-gray-500; }
+  .card { @apply rounded-2xl border border-gray-200 bg-white; }
+  .seg { @apply flex rounded-xl border border-gray-200 bg-white p-1; }
+  .seg-btn { @apply flex-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:text-gray-900; }
+  .seg-btn-on { @apply bg-accent text-ink shadow-sm; }
+  .kv { @apply flex items-start justify-between gap-4 py-2 text-[13px]; }
+  .kv dt { @apply shrink-0 text-gray-400; }
+  .kv dd { @apply text-right font-medium text-gray-900; }
+}
+
+/* School markers */
+.pin { background: none; border: none; }
+.pin-dot {
+  display: grid; place-items: center; width: 100%; height: 100%;
+  border-radius: 9999px; background: #0f0f10; box-shadow: 0 2px 6px rgba(0,0,0,.25);
+  transition: transform .15s ease;
+}
+.pin-dot > span { width: 46%; height: 46%; border-radius: 9999px; background: var(--c); }
+.pin:hover .pin-dot { transform: scale(1.12); }
+.pin-on .pin-dot { background: #2f80ed; box-shadow: 0 0 0 4px rgba(47,128,237,.25), 0 2px 8px rgba(0,0,0,.3); }
+.pin-on .pin-dot > span { background: #fff; }
+.pin-on::after {
+  content: ''; position: absolute; inset: -6px; border-radius: 9999px;
+  border: 2px solid rgba(47,128,237,.5); animation: pulse 1.8s ease-out infinite;
+}
+@keyframes pulse { from { transform: scale(.8); opacity: 1; } to { transform: scale(1.5); opacity: 0; } }
+
+.leaflet-control-zoom { border: none !important; box-shadow: 0 1px 2px rgba(16,24,40,.06), 0 4px 12px rgba(16,24,40,.08) !important; border-radius: 12px !important; overflow: hidden; }
+.leaflet-control-zoom a { width: 34px !important; height: 34px !important; line-height: 34px !important; color: #374151 !important; }
+.leaflet-tooltip { border-radius: 8px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,.12); font-family: inherit; }
+
+.scroll-thin { scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }

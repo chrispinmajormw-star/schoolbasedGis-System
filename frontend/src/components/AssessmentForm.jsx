@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Save } from 'lucide-react';
 import { api, classify, computeSpi, CLASS_STYLE } from '../lib/api.js';
+import { useAuth } from '../lib/auth.jsx';
+import { Modal, ErrorNote } from './ui.jsx';
 
 export default function AssessmentForm({ school, weights, onSaved, onClose }) {
-  const [values, setValues] = useState({});
-  const [assessor, setAssessor] = useState('');
+  const { profile } = useAuth();
+  const [values, setValues] = useState(null);
+  const [assessor, setAssessor] = useState(profile?.full_name || '');
+  const [assessedOn, setAssessedOn] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -11,17 +16,14 @@ export default function AssessmentForm({ school, weights, onSaved, onClose }) {
   // Prefill with the latest assessment so updates are quick
   useEffect(() => {
     let alive = true;
-    api.lastAssessment(school.id).then((a) => {
-      if (!alive) return;
-      const init = {};
-      weights.forEach((w) => { init[w.indicator] = a ? (w.kind === 'percent' ? Number(a[w.indicator]) : !!a[w.indicator]) : (w.kind === 'percent' ? 0 : false); });
-      setValues(init);
-    }).catch(() => {});
+    const blank = (a) => Object.fromEntries(weights.map((w) => [w.indicator,
+      a ? (w.kind === 'percent' ? Number(a[w.indicator]) : !!a[w.indicator]) : (w.kind === 'percent' ? 0 : false)]));
+    api.lastAssessment(school.id).then((a) => alive && setValues(blank(a))).catch(() => alive && setValues(blank(null)));
     return () => { alive = false; };
   }, [school.id, weights]);
 
-  const spi = useMemo(() => computeSpi(weights, values), [weights, values]);
-  const cls = classify(spi);
+  const spi = useMemo(() => (values ? computeSpi(weights, values) : 0), [weights, values]);
+  const cls = CLASS_STYLE[classify(spi)];
   const domains = [...new Set(weights.map((w) => w.domain))];
 
   async function submit(e) {
@@ -29,7 +31,7 @@ export default function AssessmentForm({ school, weights, onSaved, onClose }) {
     setSaving(true);
     setError('');
     try {
-      await api.saveAssessment(school.id, { ...values, assessor, notes });
+      await api.saveAssessment(school.id, { ...values, assessor, notes, assessed_on: assessedOn });
       onSaved();
     } catch (err) {
       setError(err.message);
@@ -39,55 +41,55 @@ export default function AssessmentForm({ school, weights, onSaved, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 p-4">
-      <form onSubmit={submit} className="max-h-full w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
-        <div className="flex items-start justify-between">
+    <Modal title={school.name} subtitle={`${school.district} · Preparedness assessment`} onClose={onClose}
+      footer={(
+        <>
+          <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
+          <button type="submit" form="assess-form" disabled={saving || !values} className="btn-dark"><Save size={15} />{saving ? 'Saving…' : 'Save assessment'}</button>
+        </>
+      )}>
+      <form id="assess-form" onSubmit={submit} className="space-y-4">
+        <div className="sticky top-0 z-10 -mx-1 flex items-center justify-between rounded-xl p-3.5" style={{ background: cls.bg, color: cls.text }}>
           <div>
-            <h2 className="text-lg font-semibold">{school.name}</h2>
-            <p className="text-sm text-gray-500">{school.district} - new assessment</p>
+            <div className="text-[11px] font-medium">School Preparedness Index (live)</div>
+            <div className="text-2xl font-bold">{spi}%</div>
           </div>
-          <button type="button" onClick={onClose} className="text-gray-500 hover:text-gray-800" aria-label="Close">x</button>
+          <div className="text-right text-xs font-semibold">{cls.label}<div className="font-normal opacity-75">{cls.range}</div></div>
         </div>
 
-        <div className="mt-3 rounded-lg p-3 text-white" style={{ background: CLASS_STYLE[cls].color }}>
-          <div className="text-xs opacity-90">School Preparedness Index</div>
-          <div className="text-2xl font-bold">{spi}%</div>
-          <div className="text-sm">{CLASS_STYLE[cls].label}</div>
-        </div>
-
-        {domains.map((d) => (
-          <fieldset key={d} className="mt-4">
-            <legend className="text-sm font-semibold text-gray-700">{d}</legend>
-            {weights.filter((w) => w.domain === d).map((w) => (
-              <label key={w.indicator} className="mt-1 flex items-center justify-between gap-3 text-sm">
-                <span>{w.label} <span className="text-xs text-gray-400">(weight {w.weight})</span></span>
-                {w.kind === 'percent' ? (
-                  <input type="number" min="0" max="100" value={values[w.indicator] ?? 0}
-                    onChange={(e) => setValues({ ...values, [w.indicator]: Math.min(100, Math.max(0, Number(e.target.value))) })}
-                    className="w-20 rounded border border-gray-300 px-2 py-1 text-right" />
-                ) : (
-                  <input type="checkbox" checked={!!values[w.indicator]}
-                    onChange={(e) => setValues({ ...values, [w.indicator]: e.target.checked })}
-                    className="h-5 w-5" />
-                )}
-              </label>
-            ))}
+        {!values && <p className="py-6 text-center text-gray-400">Loading last assessment…</p>}
+        {values && domains.map((d) => (
+          <fieldset key={d}>
+            <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">{d}</legend>
+            <div className="divide-y divide-gray-100 rounded-xl border border-gray-200">
+              {weights.filter((w) => w.domain === d).map((w) => (
+                <label key={w.indicator} className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2.5">
+                  <span>{w.label} <span className="text-[11px] text-gray-400">· weight {w.weight}</span></span>
+                  {w.kind === 'percent' ? (
+                    <span className="flex items-center gap-1">
+                      <input type="number" inputMode="numeric" min="0" max="100" value={values[w.indicator]}
+                        onChange={(e) => setValues({ ...values, [w.indicator]: Math.min(100, Math.max(0, Number(e.target.value))) })}
+                        className="input w-20 py-1 text-right" />%
+                    </span>
+                  ) : (
+                    <input type="checkbox" checked={!!values[w.indicator]}
+                      onChange={(e) => setValues({ ...values, [w.indicator]: e.target.checked })}
+                      className="h-5 w-5 accent-[#0f0f10]" />
+                  )}
+                </label>
+              ))}
+            </div>
           </fieldset>
         ))}
 
-        <input value={assessor} onChange={(e) => setAssessor(e.target.value)} placeholder="Assessor name"
-          className="mt-4 w-full rounded border border-gray-300 px-2 py-1 text-sm" />
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes (optional)" rows={2}
-          className="mt-2 w-full rounded border border-gray-300 px-2 py-1 text-sm" />
-
-        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-        <div className="mt-4 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded border border-gray-300 px-3 py-1.5 text-sm">Cancel</button>
-          <button disabled={saving} className="rounded bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-50">
-            {saving ? 'Saving...' : 'Save assessment'}
-          </button>
+        <div className="grid grid-cols-2 gap-3">
+          <label><span className="label">Assessor</span><input value={assessor} onChange={(e) => setAssessor(e.target.value)} className="input" placeholder="Name" /></label>
+          <label><span className="label">Date</span><input type="date" value={assessedOn} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setAssessedOn(e.target.value)} className="input" /></label>
         </div>
+        <label className="block"><span className="label">Notes (optional)</span>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="input" /></label>
+        <ErrorNote>{error}</ErrorNote>
       </form>
-    </div>
+    </Modal>
   );
 }
