@@ -276,8 +276,22 @@ app.post('/api/schools/:id/assessments', authenticate, handle(async (req, res) =
      RETURNING id, compute_spi(assessments)::float AS spi`,
     [id, b.assessed_on || null, assessor, ...values, pct,
       (b.notes || '').slice(0, 1000) || null, req.user.id]);
-  await pool.query('UPDATE schools SET updated_at = now() WHERE id = $1', [id]);
   res.status(201).json(rows[0]);
+}));
+
+// ---------- admin: recent activity ----------
+app.get('/api/activity', authenticate, requireAdmin, wrap(async (_req, res) => {
+  const { rows } = await pool.query(`
+    SELECT * FROM (
+      SELECT 'assessment' AS kind, a.created_at AS at, s.id AS school_id, s.name AS school_name,
+             compute_spi(a)::float AS spi, COALESCE(p.full_name, a.assessor) AS actor
+        FROM assessments a JOIN schools s ON s.id = a.school_id
+        LEFT JOIN profiles p ON p.id = a.submitted_by
+      UNION ALL
+      SELECT 'info' AS kind, s.updated_at AS at, s.id, s.name, NULL, NULL
+        FROM schools s WHERE s.updated_at IS NOT NULL
+    ) x ORDER BY at DESC LIMIT 12`);
+  res.json(rows);
 }));
 
 // ---------- admin: schools ----------
@@ -287,8 +301,8 @@ app.post('/api/schools', authenticate, requireAdmin, handle(async (req, res) => 
   if (!point) fail(400, 'Set the school location on the map');
   const { rows } = await pool.query(
     `INSERT INTO schools (name, emis_code, district, level, learners, teachers, dist_to_road_m, dist_to_health_m,
-                          contact_name, contact_phone, notes, geom)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, ST_SetSRID(ST_MakePoint($12,$13),4326)) RETURNING id`,
+                          contact_name, contact_phone, notes, geom, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, ST_SetSRID(ST_MakePoint($12,$13),4326), now()) RETURNING id`,
     [text(b.name, 'School name', 200, { required: true }), text(b.emis_code ?? null, 'EMIS code', 40),
       text(b.district, 'District', 80, { required: true }),
       ['primary', 'secondary'].includes(b.level) ? b.level : 'primary',

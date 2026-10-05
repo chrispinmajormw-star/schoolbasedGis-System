@@ -44,6 +44,7 @@ export const api = {
   createUser: (data) => request('/users', { method: 'POST', body: data }),
   setPassword: (id, password) => request(`/users/${id}`, { method: 'PATCH', body: { password } }),
   deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
+  activity: () => request('/activity'),
   exportUrl: `${BASE}/export.csv`,
 };
 
@@ -83,6 +84,20 @@ export function computeSpi(weights, values) {
 export function classify(spi) {
   if (spi === null || spi === undefined) return 'unassessed';
   return spi >= 80 ? 'high' : spi >= 60 ? 'moderate' : 'low';
+}
+
+// An assessment older than this needs repeating.
+export const STALE_DAYS = 180;
+export const needsAssessment = (p) => !p.assessed_on || (Date.now() - new Date(p.assessed_on)) / 864e5 > STALE_DAYS;
+
+export function timeAgo(d) {
+  if (!d) return '—';
+  const s = Math.max(0, (Date.now() - new Date(d)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  if (s < 86400 * 30) return `${Math.floor(s / 86400)} d ago`;
+  return fmtDate(d);
 }
 
 export const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—');

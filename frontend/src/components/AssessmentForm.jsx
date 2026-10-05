@@ -31,8 +31,8 @@ export default function AssessmentForm({ school, weights, onSaved, onClose }) {
     setSaving(true);
     setError('');
     try {
-      await api.saveAssessment(school.id, { ...values, assessor, notes, assessed_on: assessedOn });
-      onSaved();
+      const r = await api.saveAssessment(school.id, { ...values, assessor, notes, assessed_on: assessedOn });
+      onSaved(r);
     } catch (err) {
       setError(err.message);
     } finally {

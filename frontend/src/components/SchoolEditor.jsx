@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Save, ImagePlus, Trash2 } from 'lucide-react';
 import { api, resizeImage } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
+import { useFeedback } from '../lib/feedback.jsx';
 import { Modal, Field, ErrorNote } from './ui.jsx';
 import LocationPicker from './LocationPicker.jsx';
 
@@ -22,6 +23,7 @@ function initial(s) {
 /** Edit an existing school (feature) or create one (feature = null, admin only). */
 export default function SchoolEditor({ feature, onSaved, onClose, inline = false }) {
   const { isAdmin } = useAuth();
+  const { toast } = useFeedback();
   const creating = !feature;
   const id = feature?.properties.id;
   const [f, setF] = useState(() => initial(feature));
@@ -48,6 +50,7 @@ export default function SchoolEditor({ feature, onSaved, onClose, inline = false
     try {
       if (creating) await api.createSchool(body); else await api.updateSchool(id, body);
       setSaved(true);
+      toast(creating ? `${f.name} added to the map` : 'School information saved');
       onSaved?.();
     } catch (err) {
       setError(err.message);
@@ -65,6 +68,7 @@ export default function SchoolEditor({ feature, onSaved, onClose, inline = false
       const dataUrl = await resizeImage(file);
       const { photo_url: url } = await api.uploadPhoto(id, dataUrl);
       setPhoto(url);
+      toast('Photo uploaded');
       onSaved?.({ keepOpen: true });
     } catch (err) {
       setError(err.message);
@@ -168,12 +172,14 @@ export default function SchoolEditor({ feature, onSaved, onClose, inline = false
 
 export function DeleteSchoolButton({ feature, onDeleted }) {
   const [busy, setBusy] = useState(false);
+  const { toast, confirm } = useFeedback();
   return (
     <button type="button" className="btn-danger px-2.5 py-1.5" disabled={busy}
       onClick={async () => {
-        if (!window.confirm(`Delete ${feature.properties.name} and all its assessments? This cannot be undone.`)) return;
+        const ok = await confirm({ title: `Delete ${feature.properties.name}?`, message: 'The school and all its assessments are removed from the map. This cannot be undone.', confirmLabel: 'Delete school', danger: true });
+        if (!ok) return;
         setBusy(true);
-        try { await api.deleteSchool(feature.properties.id); onDeleted(); } catch (e) { window.alert(e.message); } finally { setBusy(false); }
+        try { await api.deleteSchool(feature.properties.id); toast('School deleted'); onDeleted(); } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
       }}>
       <Trash2 size={14} />
     </button>

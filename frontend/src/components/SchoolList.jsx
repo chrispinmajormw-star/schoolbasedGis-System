@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Download, SlidersHorizontal, School, Plus, Pencil, LogIn, Users } from 'lucide-react';
-import { api, CLASS_STYLE } from '../lib/api.js';
+import { api, CLASS_STYLE, timeAgo } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { ClassPill, FloodPill } from './ui.jsx';
 
@@ -30,12 +30,26 @@ function SpiTrack({ p }) {
   );
 }
 
-export default function SchoolList({ schools, selectedId, onSelect, onAddSchool, onEditMine, onSignIn }) {
+export default function SchoolList({ schools, selectedId, onSelect, onAddSchool, onEditMine, onSignIn, lastUpdated, onRefresh }) {
   const { profile, isAdmin, session } = useAuth();
   const [q, setQ] = useState('');
   const [tab, setTab] = useState('all');
   const [floodOnly, setFloodOnly] = useState(false);
   const [sort, setSort] = useState('name');
+  const listRef = useRef(null);
+  const [, tick] = useState(0);
+
+  // Keep the "updated x ago" label fresh
+  useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 15000); return () => clearInterval(t); }, []);
+
+  // When a school is picked on the map, bring its card into view
+  useEffect(() => {
+    if (!selectedId) return;
+    listRef.current?.querySelector(`[data-school="${selectedId}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [selectedId]);
+
+  const filtered = tab !== 'all' || floodOnly || q.trim();
+  const clear = () => { setTab('all'); setFloodOnly(false); setQ(''); };
 
   const list = useMemo(() => {
     const all = schools?.features.map((f) => f.properties) || [];
@@ -51,7 +65,12 @@ export default function SchoolList({ schools, selectedId, onSelect, onAddSchool,
     <section className="flex min-h-0 w-full flex-col border-gray-200 md:w-[340px] md:shrink-0 md:border-r">
       <div className="space-y-3 p-4 pb-3">
         <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">Schools</h1>
+          <div>
+            <h1 className="text-lg font-semibold leading-tight">Schools</h1>
+            <button type="button" onClick={onRefresh} title="Refresh now" className="flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-gray-700">
+              <span className="live-dot h-1.5 w-1.5 rounded-full bg-green-500" />Live · updated {timeAgo(lastUpdated)}
+            </button>
+          </div>
           <a href={api.exportUrl} className="icon-btn" title="Download CSV" aria-label="Download CSV"><Download size={16} /></a>
         </div>
         <div className="relative">
@@ -82,14 +101,19 @@ export default function SchoolList({ schools, selectedId, onSelect, onAddSchool,
         </div>
       </div>
 
-      <div className="scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto px-4 pb-4">
+      <div ref={listRef} className="scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto px-4 pb-4">
         {!schools && Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-[104px] animate-pulse rounded-2xl bg-gray-100" />)}
-        {schools && list.length === 0 && <p className="py-8 text-center text-gray-400">No schools match.</p>}
+        {schools && list.length === 0 && (
+          <div className="py-10 text-center text-gray-400">
+            <p>No schools match.</p>
+            {filtered && <button type="button" onClick={clear} className="btn-ghost mt-3">Clear filters</button>}
+          </div>
+        )}
         {list.map((p) => {
           const on = p.id === selectedId;
           const mine = profile?.school_id === p.id;
           return (
-            <button key={p.id} type="button" onClick={() => onSelect(p.id)}
+            <button key={p.id} data-school={p.id} type="button" onClick={() => onSelect(p.id)}
               className={`w-full rounded-2xl border bg-white p-3.5 text-left transition hover:border-gray-300 ${on ? 'border-sky-400 ring-4 ring-sky-50' : 'border-gray-200'}`}>
               <div className="flex items-start gap-3">
                 <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${mine ? 'bg-accent text-ink' : 'bg-gray-100 text-gray-700'}`}>

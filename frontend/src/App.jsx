@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { api } from './lib/api.js';
+import { api, needsAssessment } from './lib/api.js';
+import { useFeedback } from './lib/feedback.jsx';
 import { useAuth } from './lib/auth.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import SchoolList from './components/SchoolList.jsx';
@@ -19,12 +20,17 @@ const REFRESH_MS = 30000;
 
 export default function App() {
   const { profile, isAdmin, recovering } = useAuth();
+  const { toast } = useFeedback();
   const [view, setView] = useState('map');
   const [schools, setSchools] = useState(null);
   const [hazards, setHazards] = useState(null);
   const [weights, setWeights] = useState([]);
   const [summary, setSummary] = useState(null);
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(() => {
+    const m = /school=(\d+)/.exec(window.location.hash);
+    return m ? Number(m[1]) : null;
+  });
+  const [lastUpdated, setLastUpdated] = useState(null);
   const [editing, setEditing] = useState(null); // school id | 'new' | null
   const [assessing, setAssessing] = useState(null); // school id | null
   const [loginOpen, setLoginOpen] = useState(false);
@@ -36,6 +42,7 @@ export default function App() {
     try {
       const [s, h, w, sum] = await Promise.all([api.schools(), api.hazards(), api.weights(), api.summary()]);
       setSchools(s); setHazards(h); setWeights(w); setSummary(sum); setError('');
+      setLastUpdated(new Date());
       setRefreshKey((k) => k + 1);
     } catch (e) {
       setError(e.message);
@@ -49,6 +56,12 @@ export default function App() {
     return () => clearInterval(t);
   }, [load]);
 
+  // Shareable link: #school=<id>
+  useEffect(() => {
+    const hash = selected ? `#school=${selected}` : '';
+    if (window.location.hash !== hash) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`);
+  }, [selected]);
+
   // Admin-only pages are not reachable after sign-out
   useEffect(() => {
     if (!isAdmin && view.startsWith('admin')) setView('map');
@@ -61,10 +74,11 @@ export default function App() {
   const mineStale = mine && (!mine.properties.assessed_on || (Date.now() - new Date(mine.properties.assessed_on)) / 864e5 > 180);
 
   const showOnMap = (id) => { setSelected(id); setView('map'); };
+  const staleCount = useMemo(() => (schools?.features || []).filter((f) => needsAssessment(f.properties)).length, [schools]);
 
   return (
     <div className="flex h-full flex-col md:flex-row md:gap-3 md:p-3">
-      <Sidebar view={view} setView={setView} onSignIn={() => setLoginOpen(true)} needsAttention={mineStale} />
+      <Sidebar view={view} setView={setView} onSignIn={() => setLoginOpen(true)} needsAttention={mineStale} staleCount={isAdmin ? staleCount : 0} />
 
       <main className="relative min-h-0 flex-1 overflow-y-auto bg-white md:overflow-hidden md:rounded-2xl md:shadow-card">
         {error && (
@@ -78,7 +92,8 @@ export default function App() {
           <div className="flex flex-col md:h-full md:flex-row">
             <div className="order-2 flex min-h-0 md:order-1">
               <SchoolList schools={schools} selectedId={selected} onSelect={setSelected}
-                onAddSchool={() => setEditing('new')} onEditMine={() => setView('my-school')} onSignIn={() => setLoginOpen(true)} />
+                onAddSchool={() => setEditing('new')} onEditMine={() => setView('my-school')} onSignIn={() => setLoginOpen(true)}
+                lastUpdated={lastUpdated} onRefresh={load} />
             </div>
             <div className="relative order-1 h-[58vh] shrink-0 md:order-2 md:h-auto md:flex-1 md:shrink">
               <MapView schools={schools} hazards={hazards} selected={selected} onSelect={setSelected} layers={layers} setLayers={setLayers} />
@@ -91,7 +106,7 @@ export default function App() {
             </div>
           </div>
         )}
-        {view === 'dashboard' && <Dashboard summary={summary} onPick={showOnMap} />}
+        {view === 'dashboard' && <Dashboard summary={summary} schools={schools} refreshKey={refreshKey} onPick={showOnMap} />}
         {view === 'about' && <About weights={weights} />}
         {view === 'my-school' && (
           <MySchool feature={mine} onAssess={() => setAssessing(profile.school_id)} onShow={() => showOnMap(profile.school_id)} onSaved={load} />
@@ -108,7 +123,7 @@ export default function App() {
       )}
       {assessing && byId.get(assessing) && (
         <AssessmentForm school={byId.get(assessing).properties} weights={weights} onClose={() => setAssessing(null)}
-          onSaved={() => { setAssessing(null); load(); }} />
+          onSaved={(r) => { setAssessing(null); load(); toast(r?.spi !== undefined ? `Assessment saved · SPI is now ${r.spi}%` : 'Assessment saved'); }} />
       )}
       {loginOpen && <Login onClose={() => setLoginOpen(false)} />}
       {recovering && <SetNewPassword />}

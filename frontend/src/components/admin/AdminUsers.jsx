@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Plus, KeyRound, Trash2, RefreshCw, Copy, Check } from 'lucide-react';
 import { api, fmtDate } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.jsx';
+import { useFeedback } from '../../lib/feedback.jsx';
 import { Modal, Field, ErrorNote, Avatar } from '../ui.jsx';
 
 function genPassword() {
@@ -76,6 +77,7 @@ function NewUser({ schools, onClose, onCreated }) {
 
 export default function AdminUsers({ schools }) {
   const { profile } = useAuth();
+  const { toast, confirm } = useFeedback();
   const [users, setUsers] = useState(null);
   const [error, setError] = useState('');
   const [adding, setAdding] = useState(false);
@@ -88,12 +90,12 @@ export default function AdminUsers({ schools }) {
 
   const reset = async (u) => {
     const pw = genPassword();
-    if (!window.confirm(`Set a new temporary password for ${u.email}?`)) return;
-    try { await api.setPassword(u.id, pw); setCreated({ email: u.email, password: pw }); } catch (e) { window.alert(e.message); }
+    if (!await confirm({ title: 'Reset password?', message: `${u.email} will need the new temporary password to sign in.`, confirmLabel: 'Reset password' })) return;
+    try { await api.setPassword(u.id, pw); setCreated({ email: u.email, password: pw }); } catch (e) { toast(e.message, 'error'); }
   };
   const remove = async (u) => {
-    if (!window.confirm(`Delete the account ${u.email}? They will no longer be able to sign in.`)) return;
-    try { await api.deleteUser(u.id); load(); } catch (e) { window.alert(e.message); }
+    if (!await confirm({ title: 'Delete this account?', message: `${u.email} will no longer be able to sign in. This cannot be undone.`, confirmLabel: 'Delete account', danger: true })) return;
+    try { await api.deleteUser(u.id); toast('Account deleted'); load(); } catch (e) { toast(e.message, 'error'); }
   };
 
   return (
@@ -147,7 +149,7 @@ export default function AdminUsers({ schools }) {
         </table>
       </div>
 
-      {adding && <NewUser schools={schools} onClose={() => setAdding(false)} onCreated={(c) => { setAdding(false); setCreated(c); load(); }} />}
+      {adding && <NewUser schools={schools} onClose={() => setAdding(false)} onCreated={(c) => { setAdding(false); setCreated(c); toast('Account created'); load(); }} />}
       {created && <CreatedNotice {...created} onClose={() => setCreated(null)} />}
     </div>
   );

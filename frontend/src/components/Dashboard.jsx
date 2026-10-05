@@ -1,5 +1,7 @@
-import { School, ClipboardCheck, Gauge, Users, TriangleAlert, ChevronRight } from 'lucide-react';
-import { CLASS_STYLE, classify } from '../lib/api.js';
+import { useEffect, useMemo, useState } from 'react';
+import { School, ClipboardCheck, Gauge, Users, TriangleAlert, ChevronRight, CalendarClock, Pencil } from 'lucide-react';
+import { api, CLASS_STYLE, classify, needsAssessment, timeAgo, STALE_DAYS } from '../lib/api.js';
+import { useAuth } from '../lib/auth.jsx';
 import { ClassPill, FloodPill } from './ui.jsx';
 
 function Stat({ icon: Icon, label, value, sub }) {
@@ -15,7 +17,68 @@ function Stat({ icon: Icon, label, value, sub }) {
   );
 }
 
-export default function Dashboard({ summary, onPick }) {
+function NeedsAttention({ schools, onPick }) {
+  const rows = useMemo(() => (schools?.features || []).map((f) => f.properties).filter(needsAssessment)
+    .sort((a, b) => (b.flood_level - a.flood_level) || (b.learners - a.learners)), [schools]);
+  return (
+    <section className="card p-5">
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">Needs assessment</h2>
+        <span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold text-ink">{rows.length}</span>
+      </div>
+      <p className="mb-3 text-xs text-gray-400">Never assessed, or last assessed over {STALE_DAYS} days ago. Flood-zone schools first.</p>
+      {rows.length === 0 && <p className="py-6 text-center text-gray-400">All schools are up to date.</p>}
+      <ul className="divide-y divide-gray-100">
+        {rows.slice(0, 6).map((s) => (
+          <li key={s.id}>
+            <button type="button" onClick={() => onPick(s.id)} className="flex w-full items-center gap-3 py-2.5 text-left hover:text-gray-900">
+              <CalendarClock size={16} className="shrink-0 text-amber-500" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{s.name}</span>
+                <span className="text-[11px] text-gray-400">{s.district} · {s.assessed_on ? `last ${timeAgo(s.assessed_on)}` : 'never assessed'}</span>
+              </span>
+              <FloodPill level={s.flood_level} />
+              <ChevronRight size={16} className="text-gray-300" />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {rows.length > 6 && <p className="pt-2 text-[11px] text-gray-400">+ {rows.length - 6} more</p>}
+    </section>
+  );
+}
+
+function RecentActivity({ refreshKey, onPick }) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => { api.activity().then(setRows).catch(() => setRows([])); }, [refreshKey]);
+  return (
+    <section className="card p-5">
+      <h2 className="font-semibold">Recent activity</h2>
+      <p className="mb-3 text-xs text-gray-400">Latest updates from schools and administrators</p>
+      {!rows && <div className="h-24 animate-pulse rounded-xl bg-gray-50" />}
+      {rows?.length === 0 && <p className="py-6 text-center text-gray-400">No activity yet.</p>}
+      <ol className="relative space-y-3 border-l border-gray-100 pl-5">
+        {rows?.slice(0, 8).map((r, i) => (
+          <li key={`${r.kind}-${r.school_id}-${r.at}-${i}`} className="relative">
+            <span className={`absolute -left-[27px] top-0.5 flex h-[14px] w-[14px] items-center justify-center rounded-full ring-4 ring-white ${r.kind === 'assessment' ? 'bg-accent' : 'bg-gray-200'}`} />
+            <button type="button" onClick={() => onPick(r.school_id)} className="text-left">
+              <span className="font-medium">{r.school_name}</span>
+              <span className="block text-[11px] text-gray-500">
+                {r.kind === 'assessment'
+                  ? <><ClipboardCheck size={11} className="mr-1 inline" />Assessment · SPI {r.spi}%{r.actor ? ` · ${r.actor}` : ''}</>
+                  : <><Pencil size={11} className="mr-1 inline" />School info updated</>}
+                <span className="text-gray-400"> · {timeAgo(r.at)}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+export default function Dashboard({ summary, schools, onPick, refreshKey }) {
+  const { isAdmin } = useAuth();
   if (!summary) {
     return <div className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-28 animate-pulse rounded-2xl bg-gray-100" />)}</div>;
   }
@@ -86,6 +149,11 @@ export default function Dashboard({ summary, onPick }) {
             ))}
           </ol>
         </section>
+      </div>
+
+      <div className={`mt-4 grid gap-4 ${isAdmin ? 'lg:grid-cols-2' : ''}`}>
+        <NeedsAttention schools={schools} onPick={onPick} />
+        {isAdmin && <RecentActivity refreshKey={refreshKey} onPick={onPick} />}
       </div>
 
       <section className="card mt-4 p-5">

@@ -23,7 +23,7 @@ function NavItem({ icon: Icon, label, active, onClick, badge, collapsed, href })
     : <button type="button" onClick={onClick} className={cls} title={label}>{inner}</button>;
 }
 
-export default function Sidebar({ view, setView, onSignIn, needsAttention }) {
+export default function Sidebar({ view, setView, onSignIn, needsAttention, staleCount = 0 }) {
   const { profile, isAdmin, signOut, profileError, session } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [open, setOpen] = useState(false);
@@ -50,7 +50,8 @@ export default function Sidebar({ view, setView, onSignIn, needsAttention }) {
 
       <nav className="space-y-1">
         <NavItem icon={Map} label="Schools map" active={view === 'map'} onClick={() => go('map')} collapsed={collapsed} />
-        <NavItem icon={LayoutDashboard} label="Dashboard" active={view === 'dashboard'} onClick={() => go('dashboard')} collapsed={collapsed} />
+        <NavItem icon={LayoutDashboard} label="Dashboard" active={view === 'dashboard'} onClick={() => go('dashboard')} collapsed={collapsed}
+          badge={staleCount ? staleCount : undefined} />
         {profile?.role === 'school' && (
           <NavItem icon={School} label="My school" active={view === 'my-school'} onClick={() => go('my-school')} collapsed={collapsed}
             badge={needsAttention ? '!' : undefined} />

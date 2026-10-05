@@ -34,7 +34,7 @@ export default function AdminSchools({ schools, onAdd, onEdit, onAssess, onShow,
               <th className="px-4 py-3 font-medium">Learners</th>
               <th className="px-4 py-3 font-medium">Preparedness</th>
               <th className="px-4 py-3 font-medium">Last assessed</th>
-              <th className="px-4 py-3 font-medium">Info updated</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">Info updated</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -50,8 +50,8 @@ export default function AdminSchools({ schools, onAdd, onEdit, onAssess, onShow,
                   <td className="px-4 py-3">{p.district}</td>
                   <td className="px-4 py-3">{p.learners.toLocaleString()}</td>
                   <td className="px-4 py-3"><div className="flex flex-wrap gap-1"><ClassPill cls={p.spi_class} spi={p.spi} /><FloodPill level={p.flood_level} /></div></td>
-                  <td className="px-4 py-3 text-gray-500">{fmtDate(p.assessed_on)}</td>
-                  <td className="px-4 py-3 text-gray-500">{fmtDate(p.updated_at)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-500">{fmtDate(p.assessed_on)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-500">{fmtDate(p.updated_at)}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1.5">
                       <button type="button" onClick={() => onShow(p.id)} className="btn-ghost px-2.5 py-1.5" title="Show on map"><MapPin size={14} /></button>

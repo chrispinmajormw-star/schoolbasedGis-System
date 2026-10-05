@@ -8,7 +8,7 @@ ALTER TABLE schools
   ADD COLUMN IF NOT EXISTS contact_phone TEXT,
   ADD COLUMN IF NOT EXISTS photo_url     TEXT,
   ADD COLUMN IF NOT EXISTS notes         TEXT,
-  ADD COLUMN IF NOT EXISTS updated_at    TIMESTAMPTZ NOT NULL DEFAULT now();
+  ADD COLUMN IF NOT EXISTS updated_at    TIMESTAMPTZ;  -- set when a school or admin edits the record
 
 ALTER TABLE assessments
   ADD COLUMN IF NOT EXISTS submitted_by UUID;

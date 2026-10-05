@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
-import { ChevronUp, ChevronDown, Copy, Check, X, Pencil, ClipboardCheck, CircleCheck, CircleX } from 'lucide-react';
+import { ChevronUp, ChevronDown, Copy, Check, X, Pencil, ClipboardCheck, CircleCheck, CircleX, Link2, Printer } from 'lucide-react';
+import SpiTrend from './SpiTrend.jsx';
+import { useFeedback } from '../lib/feedback.jsx';
 import { api, CLASS_STYLE, FLOOD_STYLE, fmtDate, fmtKm } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { ClassPill } from './ui.jsx';
 
 export default function SchoolCard({ school: p, weights, onClose, onEdit, onAssess, refreshKey }) {
   const { canEdit } = useAuth();
+  const { toast } = useFeedback();
   const [tab, setTab] = useState('info');
   const [open, setOpen] = useState(() => window.matchMedia('(min-width: 640px)').matches);
   const [copied, setCopied] = useState(false);
@@ -33,6 +36,11 @@ export default function SchoolCard({ school: p, weights, onClose, onEdit, onAsse
           {copied ? <Check size={13} /> : <Copy size={13} />}
         </button>
         <div className="ml-auto flex items-center gap-1">
+          <button type="button" title="Copy link to this school" aria-label="Copy link to this school"
+            onClick={async () => { try { await navigator.clipboard.writeText(`${window.location.origin}/#school=${p.id}`); toast('Link copied'); } catch { /* ignore */ } }}
+            className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"><Link2 size={16} /></button>
+          <button type="button" title="Print school profile" aria-label="Print school profile" onClick={() => window.print()}
+            className="hidden rounded-lg p-1 text-gray-500 hover:bg-gray-100 sm:block"><Printer size={16} /></button>
           <button type="button" onClick={() => setOpen((o) => !o)} className="rounded-lg p-1 text-gray-500 hover:bg-gray-100" aria-label={open ? 'Collapse' : 'Expand'}>
             {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
@@ -83,6 +91,7 @@ export default function SchoolCard({ school: p, weights, onClose, onEdit, onAsse
                   </div>
                   <div className="text-right text-[11px]" style={{ color: cls.text }}>Assessed<br /><b>{fmtDate(p.assessed_on)}</b></div>
                 </div>
+                <div className="mb-3"><SpiTrend schoolId={p.id} refreshKey={refreshKey} /></div>
                 {assessment === undefined && <p className="py-4 text-center text-gray-400">Loading…</p>}
                 {assessment === null && <p className="py-4 text-center text-gray-400">No assessment recorded yet.</p>}
                 {assessment && (
