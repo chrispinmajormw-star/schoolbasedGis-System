@@ -3,16 +3,16 @@ import { api, classify, CLASS_STYLE, fmtDate } from '../lib/api.js';
 
 const W = 300; const H = 96; const PAD = { l: 26, r: 8, t: 8, b: 18 };
 
-/** SPI over time for one school (single series, 0-100 scale, class thresholds as guides). */
-export default function SpiTrend({ schoolId, refreshKey }) {
+/** SPI over time for one facility (single series, 0-100 scale, class thresholds as guides). */
+export default function SpiTrend({ facilityId, refreshKey }) {
   const [rows, setRows] = useState(null);
   const [hover, setHover] = useState(null);
 
   useEffect(() => {
     let alive = true;
-    api.history(schoolId).then((r) => alive && setRows(r)).catch(() => alive && setRows([]));
+    api.history(facilityId).then((r) => alive && setRows(r)).catch(() => alive && setRows([]));
     return () => { alive = false; };
-  }, [schoolId, refreshKey]);
+  }, [facilityId, refreshKey]);
 
   if (!rows) return <div className="h-[96px] animate-pulse rounded-xl bg-gray-50" />;
   if (rows.length < 2) {

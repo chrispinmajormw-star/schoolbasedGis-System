@@ -24,7 +24,17 @@ body { @apply bg-canvas font-sans text-[13px] text-gray-900 antialiased; }
   .kv dd { @apply text-right font-medium text-gray-900; }
 }
 
-/* School markers */
+/* Facility markers: type icon in a dark pin, ring = preparedness colour */
+.pin-type {
+  display: grid; place-items: center; width: 100%; height: 100%;
+  border-radius: 9999px; background: #0f0f10; border: 3px solid var(--c);
+  box-shadow: 0 2px 6px rgba(0,0,0,.28); transition: transform .15s ease;
+}
+.pin-type svg { width: 52%; height: 52%; }
+.pin:hover .pin-type { transform: scale(1.12); }
+.pin-on .pin-type { background: #2f80ed; border-color: #fff; box-shadow: 0 0 0 4px rgba(47,128,237,.3), 0 2px 8px rgba(0,0,0,.3); }
+
+/* Location-picker pin */
 .pin { background: none; border: none; }
 .pin-dot {
   display: grid; place-items: center; width: 100%; height: 100%;

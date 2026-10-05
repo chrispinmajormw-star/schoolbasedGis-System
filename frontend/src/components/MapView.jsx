@@ -1,18 +1,32 @@
-import { useEffect, useMemo, useState } from 'react';
+import { createElement, useEffect, useMemo, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { createRoot } from 'react-dom/client';
 import L from 'leaflet';
 import { MapContainer, TileLayer, GeoJSON, Marker, Tooltip, ZoomControl, useMap } from 'react-leaflet';
 import { Layers, LocateFixed } from 'lucide-react';
 import { CLASS_STYLE, FLOOD_STYLE, rpsColor } from '../lib/api.js';
 import { BASEMAPS } from '../lib/tiles.js';
+import { typeOf, TYPE_KEYS } from '../lib/facilityTypes.js';
 
 const MALAWI_CENTER = [-13.3, 34.3];
-const size = (learners, bySize) => (bySize ? Math.round(Math.min(28, Math.max(16, 10 + Math.sqrt(learners) / 3))) : 20);
+const size = (people, bySize) => (bySize ? Math.round(Math.min(34, Math.max(24, 18 + Math.sqrt(people) / 5))) : 26);
 
-function pinIcon(color, px, on) {
+// Type icon (white) inside a dark pin, with a ring coloured by preparedness / risk.
+// SVG markup is rendered once when this module loads (outside any React render).
+const TYPE_SVG = Object.fromEntries(TYPE_KEYS.map((type) => {
+  const el = document.createElement('div');
+  const root = createRoot(el);
+  flushSync(() => root.render(createElement(typeOf(type).icon, { size: 24, color: '#fff', strokeWidth: 2.25 })));
+  const html = el.innerHTML;
+  root.unmount();
+  return [type, html];
+}));
+
+function pinIcon(type, color, px, on) {
   const s = on ? px + 8 : px;
   return L.divIcon({
     className: `pin ${on ? 'pin-on' : ''}`,
-    html: `<div class="pin-dot" style="--c:${color}"><span></span></div>`,
+    html: `<div class="pin-type" style="--c:${color}">${TYPE_SVG[type] || ''}</div>`,
     iconSize: [s, s],
     iconAnchor: [s / 2, s / 2],
   });
@@ -28,12 +42,12 @@ function FlyTo({ target }) {
   return null;
 }
 
-export default function MapView({ schools, hazards, selected, onSelect, layers, setLayers }) {
+export default function MapView({ facilities, hazards, selected, onSelect, layers, setLayers }) {
   const [base, setBase] = useState('standard');
   const [showLayers, setShowLayers] = useState(false);
   const [map, setMap] = useState(null);
   const selectedFeature = useMemo(
-    () => schools?.features.find((f) => f.properties.id === selected) || null, [schools, selected]);
+    () => facilities?.features.find((f) => f.properties.id === selected) || null, [facilities, selected]);
   const toggle = (k) => setLayers((l) => ({ ...l, [k]: !l[k] }));
 
   return (
@@ -54,18 +68,18 @@ export default function MapView({ schools, hazards, selected, onSelect, layers, 
           />
         )}
 
-        {layers.schools && schools?.features.map((f) => {
+        {layers.facilities && facilities?.features.map((f) => {
           const p = f.properties;
           const [lon, lat] = f.geometry.coordinates;
           const color = layers.mode === 'risk' ? rpsColor(p.rps) : CLASS_STYLE[p.spi_class].color;
           const on = p.id === selected;
           return (
-            <Marker key={`${p.id}-${on}-${color}-${layers.learnersSize}`} position={[lat, lon]}
-              icon={pinIcon(color, size(p.learners, layers.learnersSize), on)}
+            <Marker key={`${p.id}-${on}-${color}-${layers.learnersSize}-${p.facility_type}`} position={[lat, lon]}
+              icon={pinIcon(p.facility_type, color, size(p.people_served, layers.learnersSize), on)}
               zIndexOffset={on ? 1000 : 0}
               eventHandlers={{ click: () => onSelect(p.id) }}>
               <Tooltip direction="top" offset={[0, -14]}>
-                <b>{p.name}</b><br />{p.spi === null ? 'Not assessed' : `SPI ${Math.round(p.spi)}%`}
+                <b>{p.name}</b><br />{typeOf(p.facility_type).label} · {p.spi === null ? 'Not assessed' : `SPI ${Math.round(p.spi)}%`}
               </Tooltip>
             </Marker>
           );
@@ -88,10 +102,10 @@ export default function MapView({ schools, hazards, selected, onSelect, layers, 
         </div>
         {showLayers && (
           <div className="pointer-events-auto w-60 space-y-2.5 rounded-2xl border border-gray-200 bg-white p-4 shadow-card">
-            <label className="flex items-center justify-between">Schools <input type="checkbox" checked={layers.schools} onChange={() => toggle('schools')} /></label>
+            <label className="flex items-center justify-between">Facilities <input type="checkbox" checked={layers.facilities} onChange={() => toggle('facilities')} /></label>
             <label className="flex items-center justify-between">Flood hazard zones <input type="checkbox" checked={layers.flood} onChange={() => toggle('flood')} /></label>
-            <label className="flex items-center justify-between">Size by learners <input type="checkbox" checked={layers.learnersSize} onChange={() => toggle('learnersSize')} /></label>
-            <div className="pt-1 text-xs font-medium text-gray-500">Colour schools by</div>
+            <label className="flex items-center justify-between">Size by people served <input type="checkbox" checked={layers.learnersSize} onChange={() => toggle('learnersSize')} /></label>
+            <div className="pt-1 text-xs font-medium text-gray-500">Colour facilities by</div>
             <div className="seg">
               {[['spi', 'Preparedness'], ['risk', 'Risk priority']].map(([k, label]) => (
                 <button key={k} type="button" onClick={() => setLayers((l) => ({ ...l, mode: k }))} className={`seg-btn ${layers.mode === k ? 'seg-btn-on' : ''}`}>{label}</button>

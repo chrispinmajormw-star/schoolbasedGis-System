@@ -66,7 +66,7 @@ export default function LocationPicker({ lat, lon, onChange }) {
             onChange={(e) => onChange(lat, e.target.value === '' ? NaN : Number(e.target.value))} /></label>
         <button type="button" onClick={useGps} className="btn-ghost"><Crosshair size={15} />Use my GPS</button>
       </div>
-      <p className="text-[11px] text-gray-400">{gpsMsg || 'Tap the map or drag the pin to the school\'s main gate. Standing at the school? Use GPS.'}</p>
+      <p className="text-[11px] text-gray-400">{gpsMsg || 'Tap the map or drag the pin to the main entrance. Standing at the facility? Use GPS.'}</p>
     </div>
   );
 }

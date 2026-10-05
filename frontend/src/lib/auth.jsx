@@ -51,11 +51,13 @@ export function AuthProvider({ children }) {
     setRecovering(false);
   };
 
-  const canEdit = (schoolId) => !!profile && (profile.role === 'admin' || profile.school_id === schoolId);
+  const active = profile?.status === 'active';
+  const canEdit = (facilityId) => active && (profile.role === 'admin' || profile.facility_id === facilityId);
 
   return (
     <AuthCtx.Provider value={{
-      enabled: !!supabase, ready, session, profile, profileError, isAdmin: profile?.role === 'admin',
+      enabled: !!supabase, ready, session, profile, profileError, isAdmin: active && profile?.role === 'admin',
+      isPending: profile?.status === 'pending', isDisabled: profile?.status === 'disabled',
       canEdit, signIn, signOut, sendReset, recovering, setNewPassword, reloadProfile: loadProfile,
     }}>
       {children}

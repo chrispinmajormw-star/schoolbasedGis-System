@@ -1,24 +1,27 @@
 import { ClipboardCheck, MapPin, TriangleAlert } from 'lucide-react';
 import { CLASS_STYLE, FLOOD_STYLE, fmtDate } from '../lib/api.js';
-import SchoolEditor from './SchoolEditor.jsx';
+import FacilityEditor from './FacilityEditor.jsx';
+import { typeOf } from '../lib/facilityTypes.js';
+import { needsAssessment } from '../lib/api.js';
 
-export default function MySchool({ feature, onAssess, onShow, onSaved }) {
-  if (!feature) return <div className="p-6 text-gray-400">Loading your school…</div>;
+export default function MyFacility({ feature, onAssess, onShow, onSaved }) {
+  if (!feature) return <div className="p-6 text-gray-400">Loading your facility…</div>;
   const p = feature.properties;
   const cls = CLASS_STYLE[p.spi_class];
-  const stale = !p.assessed_on || (Date.now() - new Date(p.assessed_on)) / 864e5 > 180;
+  const stale = needsAssessment(p);
+  const T = typeOf(p.facility_type);
 
   return (
     <div className="scroll-thin h-full overflow-y-auto p-4 sm:p-6">
       <div className="mx-auto max-w-3xl space-y-4">
         <div>
           <h1 className="text-lg font-semibold">{p.name}</h1>
-          <p className="text-xs text-gray-500">{p.district} · {p.emis_code || `#${p.id}`} · Changes appear on the public map as soon as you save.</p>
+          <p className="text-xs text-gray-500">{T.label} · {p.district} · {p.code || `#${p.id}`} · Changes appear on the public map as soon as you save.</p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-2xl p-4 sm:col-span-2" style={{ background: cls.bg, color: cls.text }}>
-            <div className="text-xs font-medium">School Preparedness Index</div>
+            <div className="text-xs font-medium">Safety Preparedness Index</div>
             <div className="mt-1 flex items-end gap-3">
               <span className="text-3xl font-bold">{p.spi === null ? '—' : `${p.spi}%`}</span>
               <span className="pb-1 text-sm font-semibold">{cls.label}</span>
@@ -34,11 +37,11 @@ export default function MySchool({ feature, onAssess, onShow, onSaved }) {
         {stale && (
           <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
             <TriangleAlert size={18} className="mt-0.5 shrink-0" />
-            <p>{p.assessed_on ? 'Your last assessment is more than 6 months old.' : 'Your school has not been assessed yet.'} Please complete the preparedness assessment so your school shows correctly on the map.</p>
+            <p>{p.assessed_on ? 'Your last assessment is more than 6 months old.' : 'This facility has not been assessed yet.'} Please complete the preparedness assessment so it shows correctly on the map.</p>
           </div>
         )}
 
-        <SchoolEditor key={p.id} feature={feature} inline onSaved={onSaved} />
+        <FacilityEditor key={p.id} feature={feature} inline onSaved={onSaved} />
       </div>
     </div>
   );

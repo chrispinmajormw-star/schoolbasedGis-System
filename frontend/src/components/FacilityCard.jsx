@@ -5,8 +5,10 @@ import { useFeedback } from '../lib/feedback.jsx';
 import { api, CLASS_STYLE, FLOOD_STYLE, fmtDate, fmtKm } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { ClassPill } from './ui.jsx';
+import { typeOf } from '../lib/facilityTypes.js';
 
-export default function SchoolCard({ school: p, weights, onClose, onEdit, onAssess, refreshKey }) {
+export default function FacilityCard({ facility: p, checklist, onClose, onEdit, onAssess, refreshKey }) {
+  const T = typeOf(p.facility_type);
   const { canEdit } = useAuth();
   const { toast } = useFeedback();
   const [tab, setTab] = useState('info');
@@ -22,7 +24,7 @@ export default function SchoolCard({ school: p, weights, onClose, onEdit, onAsse
   }, [p.id, refreshKey]);
 
   const copy = async () => {
-    try { await navigator.clipboard.writeText(p.emis_code || String(p.id)); setCopied(true); setTimeout(() => setCopied(false), 1200); } catch { /* ignore */ }
+    try { await navigator.clipboard.writeText(p.code || String(p.id)); setCopied(true); setTimeout(() => setCopied(false), 1200); } catch { /* ignore */ }
   };
   const editable = canEdit(p.id);
   const cls = CLASS_STYLE[p.spi_class];
@@ -30,16 +32,16 @@ export default function SchoolCard({ school: p, weights, onClose, onEdit, onAsse
   return (
     <div className="pointer-events-auto w-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-card sm:w-[330px]">
       <div className="flex items-center gap-2 px-4 pt-3.5">
-        <span className="text-xs text-gray-400">EMIS:</span>
-        <span className="text-xs font-semibold">{p.emis_code || `#${p.id}`}</span>
+        <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-ink text-white" title={T.label}><T.icon size={13} /></span>
+        <span className="min-w-0 truncate text-xs"><span className="text-gray-400">{T.label} · </span><span className="font-semibold">{p.code || `#${p.id}`}</span></span>
         <button type="button" onClick={copy} className="text-gray-400 hover:text-gray-700" aria-label="Copy EMIS code">
           {copied ? <Check size={13} /> : <Copy size={13} />}
         </button>
         <div className="ml-auto flex items-center gap-1">
-          <button type="button" title="Copy link to this school" aria-label="Copy link to this school"
-            onClick={async () => { try { await navigator.clipboard.writeText(`${window.location.origin}/#school=${p.id}`); toast('Link copied'); } catch { /* ignore */ } }}
+          <button type="button" title="Copy link to this facility" aria-label="Copy link to this facility"
+            onClick={async () => { try { await navigator.clipboard.writeText(`${window.location.origin}/#facility=${p.id}`); toast('Link copied'); } catch { /* ignore */ } }}
             className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"><Link2 size={16} /></button>
-          <button type="button" title="Print school profile" aria-label="Print school profile" onClick={() => window.print()}
+          <button type="button" title="Print facility profile" aria-label="Print facility profile" onClick={() => window.print()}
             className="hidden rounded-lg p-1 text-gray-500 hover:bg-gray-100 sm:block"><Printer size={16} /></button>
           <button type="button" onClick={() => setOpen((o) => !o)} className="rounded-lg p-1 text-gray-500 hover:bg-gray-100" aria-label={open ? 'Collapse' : 'Expand'}>
             {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -57,7 +59,7 @@ export default function SchoolCard({ school: p, weights, onClose, onEdit, onAsse
         <>
           <div className="px-4">
             <div className="seg">
-              {[['info', 'School info'], ['prep', 'Preparedness']].map(([k, label]) => (
+              {[['info', 'Facility info'], ['prep', 'Preparedness']].map(([k, label]) => (
                 <button key={k} type="button" onClick={() => setTab(k)} className={`seg-btn ${tab === k ? 'seg-btn-on' : ''}`}>{label}</button>
               ))}
             </div>
@@ -69,9 +71,9 @@ export default function SchoolCard({ school: p, weights, onClose, onEdit, onAsse
                 {p.photo_url && <img src={p.photo_url} alt={`${p.name}`} className="mb-2 h-32 w-full rounded-xl object-cover" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
                 <dl className="divide-y divide-gray-100">
                   <div className="kv"><dt>District</dt><dd>{p.district}</dd></div>
-                  <div className="kv"><dt>Level</dt><dd className="capitalize">{p.level}</dd></div>
-                  <div className="kv"><dt>Learners</dt><dd>{p.learners.toLocaleString()}</dd></div>
-                  <div className="kv"><dt>Teachers</dt><dd>{p.teachers}</dd></div>
+                  <div className="kv"><dt>Category</dt><dd>{p.subtype || '—'}</dd></div>
+                  <div className="kv"><dt>{T.people}</dt><dd>{p.people_served.toLocaleString()}</dd></div>
+                  <div className="kv"><dt>{T.staff}</dt><dd>{p.staff}</dd></div>
                   <div className="kv"><dt>Contact</dt><dd>{p.contact_name || '—'}</dd></div>
                   <div className="kv"><dt>Phone</dt><dd>{p.contact_phone ? <a className="text-sky-600" href={`tel:${p.contact_phone}`}>{p.contact_phone}</a> : '—'}</dd></div>
                   <div className="kv"><dt>Flood hazard</dt><dd>{p.flood_level ? FLOOD_STYLE[p.flood_level].label : 'Outside mapped zones'}</dd></div>
@@ -86,18 +88,18 @@ export default function SchoolCard({ school: p, weights, onClose, onEdit, onAsse
               <>
                 <div className="mb-2 flex items-end justify-between rounded-xl p-3" style={{ background: cls.bg }}>
                   <div>
-                    <div className="text-[11px] font-medium" style={{ color: cls.text }}>School Preparedness Index</div>
+                    <div className="text-[11px] font-medium" style={{ color: cls.text }}>Safety Preparedness Index</div>
                     <div className="text-2xl font-bold" style={{ color: cls.text }}>{p.spi === null ? '—' : `${p.spi}%`}</div>
                   </div>
                   <div className="text-right text-[11px]" style={{ color: cls.text }}>Assessed<br /><b>{fmtDate(p.assessed_on)}</b></div>
                 </div>
-                <div className="mb-3"><SpiTrend schoolId={p.id} refreshKey={refreshKey} /></div>
+                <div className="mb-3"><SpiTrend facilityId={p.id} refreshKey={refreshKey} /></div>
                 {assessment === undefined && <p className="py-4 text-center text-gray-400">Loading…</p>}
                 {assessment === null && <p className="py-4 text-center text-gray-400">No assessment recorded yet.</p>}
                 {assessment && (
                   <ul className="divide-y divide-gray-100">
-                    {weights.map((w) => {
-                      const v = assessment[w.indicator];
+                    {checklist.map((w) => {
+                      const v = assessment.answers?.[w.indicator];
                       return (
                         <li key={w.indicator} className="flex items-center justify-between py-1.5">
                           <span className="text-gray-600">{w.label}</span>

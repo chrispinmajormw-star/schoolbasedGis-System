@@ -1,75 +1,97 @@
-# Malawi School Disaster Preparedness and Risk Assessment (GIS)
+# SafeCom: Safe Community
 
-Stack: React + Leaflet + Tailwind, Node/Express, PostgreSQL/PostGIS, QGIS, Python.
-Method: see `METHODOLOGY.md` (School Preparedness Index and Risk Priority Score).
+**Mapping Community Safety & Resilience (Malawi)**
+
+SafeCom maps the community facilities people depend on during floods and other hazards (schools, evacuation centres,
+health facilities, markets, places of worship, community halls and water points) and scores how prepared each one is
+with the **Safety Preparedness Index (SPI)**. Facility managers keep their own information up to date; administrators
+activate accounts and verify data.
+
+Stack: React + Leaflet (OpenStreetMap tiles) + Tailwind, Node/Express, PostgreSQL/PostGIS (Supabase), Supabase Auth & Storage, QGIS, Python.
+Hosting: Firebase Hosting (frontend), Render (API), Supabase (database).
 
 ## 1. Database
 
+**Fresh install** (deletes everything):
+
 ```bash
-createdb school_preparedness
-psql school_preparedness -f database/schema.sql
-psql school_preparedness -f database/seed.sql
+psql "$DATABASE_URL" -f database/schema.sql
+psql "$DATABASE_URL" -f database/seed.sql      # fictional sample data
 ```
 
-PostGIS must be installed (`sudo apt install postgresql-postgis` on Ubuntu/Debian).
-The seed file is fictional sample data.
+**Existing School Preparedness GIS database**: run `database/migration_004_safecom.sql` once
+(after `migration_002_users.sql`). It renames schools to facilities and keeps all data and accounts.
 
-## 2. Backend
+In Supabase, paste the files into the SQL Editor instead of using `psql`.
+
+## 2. Backend (`backend/`)
+
+Environment variables:
+
+| Name | Value |
+|---|---|
+| `DATABASE_URL` | Supabase Session pooler connection string |
+| `SUPABASE_URL` | `https://<project>.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Secret key, server only |
+| `CORS_ORIGIN` | `https://school-gis-system.web.app` (comma-separate several) |
 
 ```bash
-cd backend
-cp .env.example .env        # edit DATABASE_URL
-npm install
-npm run dev
+cd backend && npm install && npm run dev      # http://localhost:4000/api/health
 ```
 
-Test: `curl http://localhost:4000/api/schools`
+## 3. Frontend (`frontend/`)
 
-## 3. Frontend
+`frontend/.env.production` (public values only):
 
-```bash
-cd frontend
-npm install
-npm run dev
+```
+VITE_API_URL=https://<render-app>.onrender.com/api
+VITE_SUPABASE_URL=https://<project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon / publishable key>
 ```
 
-Open http://localhost:5173
+```bash
+cd frontend && npm install && npm run dev     # http://localhost:5173
+```
 
-## 4. Statistics
+Pushing to `main` builds and deploys to Firebase Hosting through GitHub Actions.
+
+## 4. Accounts
+
+- **Sign-up:** anyone can create an account, choosing the facility they manage or proposing a new one (with its map location).
+  The account stays *pending* and cannot edit anything until an administrator activates it.
+- **Administrator:** activates or rejects requests (a proposed facility is published on activation), manages all facilities and accounts.
+- **Facility manager:** updates only their own facility: basic info, contact, location, photo, notes and preparedness assessment.
+
+First administrator: create the user in Supabase -> Authentication -> Users, then run the `INSERT INTO profiles ...`
+line at the bottom of `database/schema.sql` with your email. Set Supabase -> Authentication -> URL Configuration -> Site URL
+to the live site for password-reset emails.
+
+## 5. Preparedness checklist
+
+`indicator_weights` holds a **core checklist** shared by every type (`facility_type = '*'`) plus **type-specific rows** that add
+items (e.g. backup power for health facilities) or switch a core item off (`weight = 0`, e.g. fire extinguisher for water points).
+Weights are data: change them in the table after expert validation (Delphi / AHP). See `METHODOLOGY.md`.
+
+The Risk Priority Score (RPS) combines flood hazard, the preparedness gap, people served (relative to facilities of the same type)
+and distance to the nearest road.
+
+## 6. Statistics
 
 ```bash
-curl -o school_preparedness.csv http://localhost:4000/api/export.csv
+curl -o safecom_facilities.csv https://<render-app>.onrender.com/api/export.csv
 pip install pandas numpy scipy
-python analysis/spi_analysis.py school_preparedness.csv
+python analysis/spi_analysis.py safecom_facilities.csv            # all types (core indicators)
+python analysis/spi_analysis.py safecom_facilities.csv school     # one type
 ```
 
-## 5. QGIS
+## 7. QGIS
 
-1. Layer > Add Layer > Add PostGIS Layers: connect to `school_preparedness`, add `school_status` and `hazard_zones`.
-2. Style `school_status` with Categorized on `spi_class` (green high, yellow moderate, red low, grey unassessed).
-3. Compute distance to roads: download OSM roads, then use *Join attributes by nearest* (or *Distance to nearest hub*) and write the result into `schools.dist_to_road_m`.
-4. Replace the sample flood polygons by loading your real hazard layer into `hazard_zones` (DB Manager > Import layer, or `ogr2ogr`).
-
-## 6. User accounts (admin + school users)
-
-Sign-in uses Supabase Auth. Two roles:
-
-- **Administrator**: manages every school, creates/deletes user accounts, resets passwords.
-- **School user**: updates only its own school (basic info, contact, map location, photo, notes, preparedness assessment).
-
-The map is public (read-only). Saved changes appear on the map immediately, and open maps refresh every 30 seconds.
-
-Setup (once):
-
-1. Supabase SQL Editor: run `database/migration_002_users.sql`.
-2. Supabase -> Authentication -> Users -> Add user (auto-confirm) with your email, then run the `INSERT INTO profiles ...` line at the bottom of that file to make yourself admin.
-3. Supabase -> Authentication -> URL Configuration: set Site URL to `https://school-gis-system.web.app` (used by password-reset emails).
-4. Backend environment (Render): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (secret, server only), `CORS_ORIGIN=https://school-gis-system.web.app`.
-5. Frontend `frontend/.env.production`: `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (the public anon / publishable key).
-
-School photos are stored in the public Supabase Storage bucket `school-photos` (created automatically by the backend).
+1. Layer > Add Layer > Add PostGIS Layers: connect to the database, add `facility_status` and `hazard_zones`.
+2. Style `facility_status` by `spi_class` (green high, yellow moderate, red low, grey unassessed); filter or categorise by `facility_type`.
+3. Distance to roads: OSM roads + *Join attributes by nearest*; write into `facilities.dist_to_road_m`.
+4. Replace the sample flood polygons with real hazard layers in `hazard_zones` (DB Manager > Import layer, or `ogr2ogr`).
 
 ## Before real use
 
-- Replace sample schools and flood boxes with EMIS and DoDMA data.
-- Validate the indicator weights with stakeholders (see `METHODOLOGY.md`, section 2).
+- Replace the sample facilities and flood boxes with EMIS, MHFR, DoDMA and district data.
+- Validate the checklist and weights with stakeholders (see `METHODOLOGY.md`).

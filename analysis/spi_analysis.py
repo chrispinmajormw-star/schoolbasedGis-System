@@ -1,8 +1,9 @@
-"""Statistical validation of the School Preparedness Index.
+"""Statistical validation of the SafeCom Safety Preparedness Index (core checklist).
 
 Usage:
     pip install pandas numpy scipy
-    python spi_analysis.py school_preparedness.csv
+    python spi_analysis.py safecom_facilities.csv            # all facility types
+    python spi_analysis.py safecom_facilities.csv school     # one type only
 
 The CSV comes from the web app (Download CSV) or http://localhost:4000/api/export.csv
 Checks: Cronbach's alpha, expert-vs-equal weight comparison, random weight perturbation.
@@ -15,16 +16,18 @@ from scipy.stats import spearmanr
 WEIGHTS = {
     "emergency_plan": 12, "emergency_contacts": 8, "evacuation_route": 10,
     "evacuation_signage": 5, "safe_assembly_point": 10, "disaster_drill": 12,
-    "teachers_trained_pct": 12, "early_warning": 12, "first_aid_kit": 10,
+    "staff_trained_pct": 12, "early_warning": 12, "first_aid_kit": 10,
     "fire_extinguisher": 9,
 }
 ITEMS = list(WEIGHTS)
 
 
-def load(path):
+def load(path, ftype=None):
     df = pd.read_csv(path).dropna(subset=["spi"]).copy()
+    if ftype:
+        df = df[df["facility_type"] == ftype].copy()
     for c in ITEMS:
-        if c == "teachers_trained_pct":
+        if c == "staff_trained_pct":
             df[c] = df[c].astype(float) / 100
         else:
             df[c] = df[c].astype(str).str.lower().isin(["true", "t", "1"]).astype(float)
@@ -48,12 +51,13 @@ def klass(v):
     return np.where(v >= 80, "high", np.where(v >= 60, "moderate", "low"))
 
 
-def main(path):
-    df = load(path)
+def main(path, ftype=None):
+    df = load(path, ftype)
     n = len(df)
-    print(f"Assessed schools: {n}")
+    print(f"Assessed facilities{f' ({ftype})' if ftype else ''}: {n}")
+    print("Note: uses the 10 core indicators shared by all types; type-specific extras are excluded.")
     if n < 5:
-        print("Need at least 5 assessed schools for meaningful statistics.")
+        print("Need at least 5 assessed facilities for meaningful statistics.")
         return
 
     expert = spi(df, WEIGHTS)
@@ -74,13 +78,18 @@ def main(path):
         rhos.append(spearmanr(expert, alt)[0])
         flips.append((klass(expert) != klass(alt)).mean())
     print(f"1000 random weight perturbations (+/-50%): median rho = {np.median(rhos):.3f}, "
-          f"5th percentile = {np.percentile(rhos, 5):.3f}, mean share of schools changing class = {np.mean(flips):.1%}")
+          f"5th percentile = {np.percentile(rhos, 5):.3f}, mean share of facilities changing class = {np.mean(flips):.1%}")
 
-    print("\nIndicator coverage (share of schools meeting each):")
+    print("\nIndicator coverage (share of facilities meeting each):")
     print((df[ITEMS].mean() * 100).round(0).astype(int).sort_values().to_string())
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 3):
         sys.exit(__doc__)
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) == 3 else None)
+
+    if len(sys.argv) == 2:
+        df = pd.read_csv(sys.argv[1]).dropna(subset=["spi"])
+        print("\nMean SPI by facility type:")
+        print(df.groupby("facility_type")["spi"].agg(["count", "mean"]).round(1).to_string())

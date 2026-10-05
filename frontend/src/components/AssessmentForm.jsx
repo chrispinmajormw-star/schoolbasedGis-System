@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Save } from 'lucide-react';
 import { api, classify, computeSpi, CLASS_STYLE } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
+import { typeOf } from '../lib/facilityTypes.js';
 import { Modal, ErrorNote } from './ui.jsx';
 
-export default function AssessmentForm({ school, weights, onSaved, onClose }) {
+export default function AssessmentForm({ facility, checklist: weights, onSaved, onClose }) {
   const { profile } = useAuth();
   const [values, setValues] = useState(null);
   const [assessor, setAssessor] = useState(profile?.full_name || '');
@@ -17,10 +18,10 @@ export default function AssessmentForm({ school, weights, onSaved, onClose }) {
   useEffect(() => {
     let alive = true;
     const blank = (a) => Object.fromEntries(weights.map((w) => [w.indicator,
-      a ? (w.kind === 'percent' ? Number(a[w.indicator]) : !!a[w.indicator]) : (w.kind === 'percent' ? 0 : false)]));
-    api.lastAssessment(school.id).then((a) => alive && setValues(blank(a))).catch(() => alive && setValues(blank(null)));
+      a ? (w.kind === 'percent' ? Number(a.answers?.[w.indicator] ?? 0) : !!a.answers?.[w.indicator]) : (w.kind === 'percent' ? 0 : false)]));
+    api.lastAssessment(facility.id).then((a) => alive && setValues(blank(a))).catch(() => alive && setValues(blank(null)));
     return () => { alive = false; };
-  }, [school.id, weights]);
+  }, [facility.id, weights]);
 
   const spi = useMemo(() => (values ? computeSpi(weights, values) : 0), [weights, values]);
   const cls = CLASS_STYLE[classify(spi)];
@@ -31,7 +32,7 @@ export default function AssessmentForm({ school, weights, onSaved, onClose }) {
     setSaving(true);
     setError('');
     try {
-      const r = await api.saveAssessment(school.id, { ...values, assessor, notes, assessed_on: assessedOn });
+      const r = await api.saveAssessment(facility.id, { answers: values, assessor, notes, assessed_on: assessedOn });
       onSaved(r);
     } catch (err) {
       setError(err.message);
@@ -41,7 +42,7 @@ export default function AssessmentForm({ school, weights, onSaved, onClose }) {
   }
 
   return (
-    <Modal title={school.name} subtitle={`${school.district} · Preparedness assessment`} onClose={onClose}
+    <Modal title={facility.name} subtitle={`${typeOf(facility.facility_type).label} · ${facility.district} · Preparedness assessment`} onClose={onClose}
       footer={(
         <>
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
@@ -51,7 +52,7 @@ export default function AssessmentForm({ school, weights, onSaved, onClose }) {
       <form id="assess-form" onSubmit={submit} className="space-y-4">
         <div className="sticky top-0 z-10 -mx-1 flex items-center justify-between rounded-xl p-3.5" style={{ background: cls.bg, color: cls.text }}>
           <div>
-            <div className="text-[11px] font-medium">School Preparedness Index (live)</div>
+            <div className="text-[11px] font-medium">Safety Preparedness Index (live)</div>
             <div className="text-2xl font-bold">{spi}%</div>
           </div>
           <div className="text-right text-xs font-semibold">{cls.label}<div className="font-normal opacity-75">{cls.range}</div></div>

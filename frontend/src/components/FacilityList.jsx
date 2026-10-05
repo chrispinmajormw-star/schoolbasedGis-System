@@ -1,18 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Download, SlidersHorizontal, School, Plus, Pencil, LogIn, Users } from 'lucide-react';
+import { Search, Download, SlidersHorizontal, Plus, Pencil, UserPlus, Users, LayoutGrid } from 'lucide-react';
 import { api, CLASS_STYLE, timeAgo } from '../lib/api.js';
+import { FACILITY_TYPES, TYPE_KEYS, typeOf } from '../lib/facilityTypes.js';
 import { useAuth } from '../lib/auth.jsx';
 import { ClassPill, FloodPill } from './ui.jsx';
 
-const TABS = [
-  ['all', 'All'],
-  ['low', 'Low'],
-  ['moderate', 'Moderate'],
-  ['high', 'High'],
-];
+const TABS = [['all', 'All'], ['low', 'Low'], ['moderate', 'Moderate'], ['high', 'High']];
 
 function SpiTrack({ p }) {
-  const spi = p.spi;
+  const { spi } = p;
   const s = CLASS_STYLE[p.spi_class];
   return (
     <div className="mt-3 flex items-center gap-2 text-[11px] text-gray-500">
@@ -30,7 +26,7 @@ function SpiTrack({ p }) {
   );
 }
 
-export default function SchoolList({ schools, selectedId, onSelect, onAddSchool, onEditMine, onSignIn, lastUpdated, onRefresh }) {
+export default function FacilityList({ facilities, typeFilter, setTypeFilter, selectedId, onSelect, onAdd, onEditMine, onJoin, lastUpdated, onRefresh }) {
   const { profile, isAdmin, session } = useAuth();
   const [q, setQ] = useState('');
   const [tab, setTab] = useState('all');
@@ -42,31 +38,41 @@ export default function SchoolList({ schools, selectedId, onSelect, onAddSchool,
   // Keep the "updated x ago" label fresh
   useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 15000); return () => clearInterval(t); }, []);
 
-  // When a school is picked on the map, bring its card into view
+  // When a facility is picked on the map, bring its card into view
   useEffect(() => {
     if (!selectedId) return;
-    listRef.current?.querySelector(`[data-school="${selectedId}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    listRef.current?.querySelector(`[data-facility="${selectedId}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [selectedId]);
 
-  const filtered = tab !== 'all' || floodOnly || q.trim();
-  const clear = () => { setTab('all'); setFloodOnly(false); setQ(''); };
+  const all = useMemo(() => facilities?.features.map((f) => f.properties) || [], [facilities]);
+  const counts = useMemo(() => all.reduce((c, p) => ({ ...c, [p.facility_type]: (c[p.facility_type] || 0) + 1 }), {}), [all]);
+  const filtered = tab !== 'all' || floodOnly || q.trim() || typeFilter !== 'all';
+  const clear = () => { setTab('all'); setFloodOnly(false); setQ(''); setTypeFilter('all'); };
 
   const list = useMemo(() => {
-    const all = schools?.features.map((f) => f.properties) || [];
     const needle = q.trim().toLowerCase();
     return all
+      .filter((p) => typeFilter === 'all' || p.facility_type === typeFilter)
       .filter((p) => tab === 'all' || p.spi_class === tab)
       .filter((p) => !floodOnly || p.flood_level > 0)
-      .filter((p) => !needle || `${p.name} ${p.district} ${p.emis_code || ''}`.toLowerCase().includes(needle))
+      .filter((p) => !needle || `${p.name} ${p.district} ${p.code || ''} ${typeOf(p.facility_type).label}`.toLowerCase().includes(needle))
       .sort((a, b) => (sort === 'risk' ? (b.rps ?? -1) - (a.rps ?? -1) : a.name.localeCompare(b.name)));
-  }, [schools, q, tab, floodOnly, sort]);
+  }, [all, q, tab, floodOnly, sort, typeFilter]);
+
+  const chip = (key, label, Icon, n) => (
+    <button key={key} type="button" onClick={() => setTypeFilter(key)} title={label}
+      className={`flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-medium transition ${
+        typeFilter === key ? 'border-ink bg-ink text-white' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}>
+      <Icon size={13} />{label}<span className={typeFilter === key ? 'text-accent' : 'text-gray-400'}>{n}</span>
+    </button>
+  );
 
   return (
-    <section className="flex min-h-0 w-full flex-col border-gray-200 md:w-[340px] md:shrink-0 md:border-r">
+    <section className="flex min-h-0 w-full flex-col border-gray-200 md:w-[360px] md:shrink-0 md:border-r">
       <div className="space-y-3 p-4 pb-3">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold leading-tight">Schools</h1>
+            <h1 className="text-lg font-semibold leading-tight">Community facilities</h1>
             <button type="button" onClick={onRefresh} title="Refresh now" className="flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-gray-700">
               <span className="live-dot h-1.5 w-1.5 rounded-full bg-green-500" />Live · updated {timeAgo(lastUpdated)}
             </button>
@@ -75,7 +81,11 @@ export default function SchoolList({ schools, selectedId, onSelect, onAddSchool,
         </div>
         <div className="relative">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search school, district, EMIS" className="input pl-9" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, district, code" className="input pl-9" />
+        </div>
+        <div className="scroll-thin -mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1">
+          {chip('all', 'All', LayoutGrid, all.length)}
+          {TYPE_KEYS.filter((k) => counts[k]).map((k) => chip(k, FACILITY_TYPES[k].plural, FACILITY_TYPES[k].icon, counts[k]))}
         </div>
         <div className="flex gap-2">
           <div className="seg flex-1">
@@ -96,33 +106,36 @@ export default function SchoolList({ schools, selectedId, onSelect, onAddSchool,
           </details>
         </div>
         <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
-          {tab === 'all' ? 'All schools' : `${CLASS_STYLE[tab].label} preparedness`}
+          {typeFilter === 'all' ? 'All facilities' : typeOf(typeFilter).plural}
+          {tab !== 'all' && ` · ${CLASS_STYLE[tab].label} preparedness`}
           <span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold text-ink">{list.length}</span>
         </div>
       </div>
 
       <div ref={listRef} className="scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto px-4 pb-4">
-        {!schools && Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-[104px] animate-pulse rounded-2xl bg-gray-100" />)}
-        {schools && list.length === 0 && (
+        {!facilities && Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-[104px] animate-pulse rounded-2xl bg-gray-100" />)}
+        {facilities && list.length === 0 && (
           <div className="py-10 text-center text-gray-400">
-            <p>No schools match.</p>
+            <p>No facilities match.</p>
             {filtered && <button type="button" onClick={clear} className="btn-ghost mt-3">Clear filters</button>}
           </div>
         )}
         {list.map((p) => {
           const on = p.id === selectedId;
-          const mine = profile?.school_id === p.id;
+          const mine = profile?.facility_id === p.id;
+          const T = typeOf(p.facility_type);
           return (
-            <button key={p.id} data-school={p.id} type="button" onClick={() => onSelect(p.id)}
+            <button key={p.id} data-facility={p.id} type="button" onClick={() => onSelect(p.id)}
               className={`w-full rounded-2xl border bg-white p-3.5 text-left transition hover:border-gray-300 ${on ? 'border-sky-400 ring-4 ring-sky-50' : 'border-gray-200'}`}>
               <div className="flex items-start gap-3">
-                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${mine ? 'bg-accent text-ink' : 'bg-gray-100 text-gray-700'}`}>
-                  <School size={15} />
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${mine ? 'bg-accent text-ink' : 'bg-gray-100 text-gray-700'}`} title={T.label}>
+                  <T.icon size={15} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] font-semibold">{p.name}</div>
                   <div className="mt-1 flex items-center gap-2 whitespace-nowrap text-[11px] text-gray-400">
-                    <span className="inline-flex items-center gap-1"><Users size={11} />{p.learners.toLocaleString()}</span>
+                    <span>{T.label}</span>
+                    <span className="inline-flex items-center gap-1" title={T.people}><Users size={11} />{p.people_served.toLocaleString()}</span>
                     <FloodPill level={p.flood_level} />
                   </div>
                 </div>
@@ -136,11 +149,11 @@ export default function SchoolList({ schools, selectedId, onSelect, onAddSchool,
 
       <div className="border-t border-gray-100 p-4">
         {isAdmin ? (
-          <button type="button" onClick={onAddSchool} className="btn-dark w-full"><Plus size={16} />Add school</button>
-        ) : profile?.role === 'school' ? (
-          <button type="button" onClick={onEditMine} className="btn-dark w-full"><Pencil size={16} />Update my school</button>
+          <button type="button" onClick={onAdd} className="btn-dark w-full"><Plus size={16} />Add facility</button>
+        ) : profile?.role === 'manager' && profile.status === 'active' ? (
+          <button type="button" onClick={onEditMine} className="btn-dark w-full"><Pencil size={16} />Update my facility</button>
         ) : !session ? (
-          <button type="button" onClick={onSignIn} className="btn-dark w-full"><LogIn size={16} />Sign in to update your school</button>
+          <button type="button" onClick={onJoin} className="btn-dark w-full"><UserPlus size={16} />Register your facility</button>
         ) : null}
       </div>
     </section>

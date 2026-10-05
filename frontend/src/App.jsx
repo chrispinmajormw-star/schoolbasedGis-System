@@ -4,16 +4,16 @@ import { api, needsAssessment } from './lib/api.js';
 import { useFeedback } from './lib/feedback.jsx';
 import { useAuth } from './lib/auth.jsx';
 import Sidebar from './components/Sidebar.jsx';
-import SchoolList from './components/SchoolList.jsx';
+import FacilityList from './components/FacilityList.jsx';
 import MapView from './components/MapView.jsx';
-import SchoolCard from './components/SchoolCard.jsx';
+import FacilityCard from './components/FacilityCard.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import AssessmentForm from './components/AssessmentForm.jsx';
-import SchoolEditor from './components/SchoolEditor.jsx';
-import MySchool from './components/MySchool.jsx';
+import FacilityEditor from './components/FacilityEditor.jsx';
+import MyFacility from './components/MyFacility.jsx';
 import About from './components/About.jsx';
-import Login, { SetNewPassword } from './components/Login.jsx';
-import AdminSchools from './components/admin/AdminSchools.jsx';
+import AuthDialog, { SetNewPassword } from './components/Login.jsx';
+import AdminFacilities from './components/admin/AdminFacilities.jsx';
 import AdminUsers from './components/admin/AdminUsers.jsx';
 
 const REFRESH_MS = 30000;
@@ -22,26 +22,28 @@ export default function App() {
   const { profile, isAdmin, recovering } = useAuth();
   const { toast } = useFeedback();
   const [view, setView] = useState('map');
-  const [schools, setSchools] = useState(null);
+  const [facilities, setFacilities] = useState(null);
   const [hazards, setHazards] = useState(null);
-  const [weights, setWeights] = useState([]);
+  const [checklists, setChecklists] = useState(null);
   const [summary, setSummary] = useState(null);
   const [selected, setSelected] = useState(() => {
-    const m = /school=(\d+)/.exec(window.location.hash);
+    const m = /facility=(\d+)/.exec(window.location.hash);
     return m ? Number(m[1]) : null;
   });
+  const [typeFilter, setTypeFilter] = useState('all');
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [editing, setEditing] = useState(null); // school id | 'new' | null
-  const [assessing, setAssessing] = useState(null); // school id | null
-  const [loginOpen, setLoginOpen] = useState(false);
+  const [editing, setEditing] = useState(null); // facility id | 'new' | null
+  const [assessing, setAssessing] = useState(null); // facility id | null
+  const [authOpen, setAuthOpen] = useState(null); // 'signin' | 'register' | null
+  const [pendingCount, setPendingCount] = useState(0);
   const [error, setError] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
-  const [layers, setLayers] = useState({ flood: true, schools: true, learnersSize: true, mode: 'spi' });
+  const [layers, setLayers] = useState({ flood: true, facilities: true, learnersSize: true, mode: 'spi' });
 
   const load = useCallback(async () => {
     try {
-      const [s, h, w, sum] = await Promise.all([api.schools(), api.hazards(), api.weights(), api.summary()]);
-      setSchools(s); setHazards(h); setWeights(w); setSummary(sum); setError('');
+      const [f, h, c, sum] = await Promise.all([api.facilities(), api.hazards(), api.checklists(), api.summary()]);
+      setFacilities(f); setHazards(h); setChecklists(c); setSummary(sum); setError('');
       setLastUpdated(new Date());
       setRefreshKey((k) => k + 1);
     } catch (e) {
@@ -49,36 +51,47 @@ export default function App() {
     }
   }, []);
 
-  // Initial load + keep the map current while others update their schools.
+  // Initial load + keep the map current while managers update their facilities.
   useEffect(() => {
     load();
     const t = setInterval(() => { if (document.visibilityState === 'visible') load(); }, REFRESH_MS);
     return () => clearInterval(t);
   }, [load]);
 
-  // Shareable link: #school=<id>
+  // Admins: count sign-up requests waiting for activation
   useEffect(() => {
-    const hash = selected ? `#school=${selected}` : '';
+    if (!isAdmin) { setPendingCount(0); return; }
+    api.users().then((u) => setPendingCount(u.filter((x) => x.status === 'pending').length)).catch(() => {});
+  }, [isAdmin, refreshKey]);
+
+  // Shareable link: #facility=<id>
+  useEffect(() => {
+    const hash = selected ? `#facility=${selected}` : '';
     if (window.location.hash !== hash) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`);
   }, [selected]);
 
-  // Admin-only pages are not reachable after sign-out
+  // Pages that need a role are not reachable after sign-out
+  const isActiveManager = profile?.role === 'manager' && profile.status === 'active';
   useEffect(() => {
     if (!isAdmin && view.startsWith('admin')) setView('map');
-    if (profile?.role !== 'school' && view === 'my-school') setView('map');
-  }, [isAdmin, profile, view]);
+    if (!isActiveManager && view === 'my-facility') setView('map');
+  }, [isAdmin, isActiveManager, view]);
 
-  const byId = useMemo(() => new Map((schools?.features || []).map((f) => [f.properties.id, f])), [schools]);
+  const byId = useMemo(() => new Map((facilities?.features || []).map((f) => [f.properties.id, f])), [facilities]);
+  const visible = useMemo(() => (typeFilter === 'all' || !facilities ? facilities
+    : { ...facilities, features: facilities.features.filter((f) => f.properties.facility_type === typeFilter) }), [facilities, typeFilter]);
   const selectedProps = selected ? byId.get(selected)?.properties : null;
-  const mine = profile?.school_id ? byId.get(profile.school_id) : null;
-  const mineStale = mine && (!mine.properties.assessed_on || (Date.now() - new Date(mine.properties.assessed_on)) / 864e5 > 180);
+  const mine = isActiveManager && profile.facility_id ? byId.get(profile.facility_id) : null;
+  const mineStale = mine && needsAssessment(mine.properties);
+  const staleCount = useMemo(() => (facilities?.features || []).filter((f) => needsAssessment(f.properties)).length, [facilities]);
+  const checklistFor = (p) => checklists?.[p.facility_type] || [];
 
-  const showOnMap = (id) => { setSelected(id); setView('map'); };
-  const staleCount = useMemo(() => (schools?.features || []).filter((f) => needsAssessment(f.properties)).length, [schools]);
+  const showOnMap = (id) => { setSelected(id); setTypeFilter('all'); setView('map'); };
 
   return (
     <div className="flex h-full flex-col md:flex-row md:gap-3 md:p-3">
-      <Sidebar view={view} setView={setView} onSignIn={() => setLoginOpen(true)} needsAttention={mineStale} staleCount={isAdmin ? staleCount : 0} />
+      <Sidebar view={view} setView={setView} onSignIn={() => setAuthOpen('signin')} onJoin={() => setAuthOpen('register')}
+        needsAttention={mineStale} staleCount={isAdmin ? staleCount : 0} pendingCount={pendingCount} />
 
       <main className="relative min-h-0 flex-1 overflow-y-auto bg-white md:overflow-hidden md:rounded-2xl md:shadow-card">
         {error && (
@@ -91,41 +104,41 @@ export default function App() {
         {view === 'map' && (
           <div className="flex flex-col md:h-full md:flex-row">
             <div className="order-2 flex min-h-0 md:order-1">
-              <SchoolList schools={schools} selectedId={selected} onSelect={setSelected}
-                onAddSchool={() => setEditing('new')} onEditMine={() => setView('my-school')} onSignIn={() => setLoginOpen(true)}
+              <FacilityList facilities={facilities} typeFilter={typeFilter} setTypeFilter={setTypeFilter} selectedId={selected} onSelect={setSelected}
+                onAdd={() => setEditing('new')} onEditMine={() => setView('my-facility')} onJoin={() => setAuthOpen('register')}
                 lastUpdated={lastUpdated} onRefresh={load} />
             </div>
             <div className="relative order-1 h-[58vh] shrink-0 md:order-2 md:h-auto md:flex-1 md:shrink">
-              <MapView schools={schools} hazards={hazards} selected={selected} onSelect={setSelected} layers={layers} setLayers={setLayers} />
+              <MapView facilities={visible} hazards={hazards} selected={selected} onSelect={setSelected} layers={layers} setLayers={setLayers} />
               {selectedProps && (
                 <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[1000] sm:bottom-auto sm:right-auto sm:top-3">
-                  <SchoolCard school={selectedProps} weights={weights} refreshKey={refreshKey} onClose={() => setSelected(null)}
+                  <FacilityCard facility={selectedProps} checklist={checklistFor(selectedProps)} refreshKey={refreshKey} onClose={() => setSelected(null)}
                     onEdit={() => setEditing(selectedProps.id)} onAssess={() => setAssessing(selectedProps.id)} />
                 </div>
               )}
             </div>
           </div>
         )}
-        {view === 'dashboard' && <Dashboard summary={summary} schools={schools} refreshKey={refreshKey} onPick={showOnMap} />}
-        {view === 'about' && <About weights={weights} />}
-        {view === 'my-school' && (
-          <MySchool feature={mine} onAssess={() => setAssessing(profile.school_id)} onShow={() => showOnMap(profile.school_id)} onSaved={load} />
+        {view === 'dashboard' && <Dashboard summary={summary} facilities={facilities} refreshKey={refreshKey} onPick={showOnMap} />}
+        {view === 'about' && <About checklists={checklists} />}
+        {view === 'my-facility' && (
+          <MyFacility feature={mine} onAssess={() => setAssessing(profile.facility_id)} onShow={() => showOnMap(profile.facility_id)} onSaved={load} />
         )}
-        {view === 'admin-schools' && isAdmin && (
-          <AdminSchools schools={schools} onAdd={() => setEditing('new')} onEdit={setEditing} onAssess={setAssessing} onShow={showOnMap} onChanged={load} />
+        {view === 'admin-facilities' && isAdmin && (
+          <AdminFacilities facilities={facilities} onAdd={() => setEditing('new')} onEdit={setEditing} onAssess={setAssessing} onShow={showOnMap} onChanged={load} />
         )}
-        {view === 'admin-users' && isAdmin && <AdminUsers schools={schools} />}
+        {view === 'admin-users' && isAdmin && <AdminUsers facilities={facilities} onChanged={load} />}
       </main>
 
       {editing && (editing === 'new' || byId.get(editing)) && (
-        <SchoolEditor feature={editing === 'new' ? null : byId.get(editing)} onClose={() => setEditing(null)}
+        <FacilityEditor feature={editing === 'new' ? null : byId.get(editing)} onClose={() => setEditing(null)}
           onSaved={(opts) => { load(); if (!opts?.keepOpen) setEditing(null); }} />
       )}
       {assessing && byId.get(assessing) && (
-        <AssessmentForm school={byId.get(assessing).properties} weights={weights} onClose={() => setAssessing(null)}
+        <AssessmentForm facility={byId.get(assessing).properties} checklist={checklistFor(byId.get(assessing).properties)} onClose={() => setAssessing(null)}
           onSaved={(r) => { setAssessing(null); load(); toast(r?.spi !== undefined ? `Assessment saved · SPI is now ${r.spi}%` : 'Assessment saved'); }} />
       )}
-      {loginOpen && <Login onClose={() => setLoginOpen(false)} />}
+      {authOpen && <AuthDialog initial={authOpen} facilities={facilities} onClose={() => setAuthOpen(null)} />}
       {recovering && <SetNewPassword />}
     </div>
   );
