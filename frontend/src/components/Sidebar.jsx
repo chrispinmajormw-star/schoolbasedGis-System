@@ -1,5 +1,5 @@
 import {
-  Map, LayoutDashboard, Building2, Users, FileDown, BookOpen, LogOut, LogIn, ChevronsLeft, ShieldCheck, Menu, X, UserPlus, Clock,
+  Map, LayoutDashboard, Building2, Users, FileDown, BookOpen, LogOut, LogIn, ChevronsLeft, ChevronsRight, ShieldCheck, Menu, X, UserPlus, Clock, Settings,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../lib/auth.jsx';
@@ -8,11 +8,13 @@ import { Avatar } from './ui.jsx';
 import { typeOf } from '../lib/facilityTypes.js';
 
 function NavItem({ icon: Icon, label, active, onClick, badge, collapsed, href }) {
-  const cls = `group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition ${
+  const cls = `group relative flex w-full items-center gap-3 rounded-xl py-2.5 text-[13px] font-medium transition ${
+    collapsed ? 'justify-center px-0' : 'px-3'} ${
     active ? 'bg-white/10 text-white' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`;
   const inner = (
     <>
       <Icon size={18} className={active ? 'text-accent' : ''} />
+      {collapsed && badge !== undefined && <span className="absolute right-2 top-1.5 h-2 w-2 rounded-full bg-accent ring-2 ring-ink" />}
       {!collapsed && <span className="flex-1 text-left">{label}</span>}
       {!collapsed && badge !== undefined && (
         <span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold text-ink">{badge}</span>
@@ -24,17 +26,20 @@ function NavItem({ icon: Icon, label, active, onClick, badge, collapsed, href })
     : <button type="button" onClick={onClick} className={cls} title={label}>{inner}</button>;
 }
 
-export default function Sidebar({ view, setView, onSignIn, onJoin, needsAttention, staleCount = 0, pendingCount = 0 }) {
+export default function Sidebar({ view, setView, onSignIn, onJoin, needsAttention, staleCount = 0, pendingCount = 0, collapsed: collapsedPref = false, onCollapse }) {
   const { profile, isAdmin, isPending, isDisabled, signOut, profileError, session } = useAuth();
   const MyIcon = profile?.facility_type ? typeOf(profile.facility_type).icon : Building2;
-  const [collapsed, setCollapsed] = useState(false);
   const [open, setOpen] = useState(false);
+  // The mobile drawer is always shown expanded
+  const [isDesktop] = useState(() => window.matchMedia('(min-width: 768px)').matches);
+  const collapsed = collapsedPref && isDesktop;
+  const setCollapsed = (v) => onCollapse?.(v);
 
   const go = (v) => { setView(v); setOpen(false); };
 
   const nav = (
     <>
-      <div className="flex items-center gap-3 px-1 pb-5">
+      <div className={`flex gap-3 pb-5 ${collapsed ? 'flex-col items-center' : 'items-center px-1'}`}>
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-ink">
           <ShieldCheck size={20} />
         </span>
@@ -44,8 +49,10 @@ export default function Sidebar({ view, setView, onSignIn, onJoin, needsAttentio
             <div className="truncate text-[11px] text-gray-400">Safe Community · Malawi</div>
           </div>
         )}
-        <button type="button" onClick={() => setCollapsed((c) => !c)} className="hidden text-gray-500 hover:text-white md:block" aria-label="Collapse menu">
-          <ChevronsLeft size={18} className={collapsed ? 'rotate-180' : ''} />
+        <button type="button" onClick={() => setCollapsed(!collapsed)} title={collapsed ? 'Expand menu' : 'Collapse menu'}
+          aria-label={collapsed ? 'Expand menu' : 'Collapse menu'}
+          className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-gray-200 transition hover:bg-white/20 hover:text-white md:flex">
+          {collapsed ? <ChevronsRight size={17} /> : <ChevronsLeft size={17} />}
         </button>
         <button type="button" onClick={() => setOpen(false)} className="text-gray-400 md:hidden" aria-label="Close menu"><X size={20} /></button>
       </div>
@@ -75,9 +82,13 @@ export default function Sidebar({ view, setView, onSignIn, onJoin, needsAttentio
       <nav className="space-y-1">
         <NavItem icon={FileDown} label="Download CSV" href={api.exportUrl} collapsed={collapsed} />
         <NavItem icon={BookOpen} label="How SPI works" active={view === 'about'} onClick={() => go('about')} collapsed={collapsed} />
+        <NavItem icon={Settings} label="Settings" active={view === 'settings'} onClick={() => go('settings')} collapsed={collapsed} />
       </nav>
 
       <div className="mt-auto pt-6">
+        {isPending && collapsed && (
+          <span className="mb-2 flex justify-center text-accent" title="Waiting for an administrator to activate your account"><Clock size={18} /></span>
+        )}
         {isPending && !collapsed && (
           <div className="mb-2 rounded-xl bg-accent/10 px-3 py-2.5 text-[11px] text-accent">
             <div className="mb-0.5 flex items-center gap-1.5 font-semibold"><Clock size={12} />Waiting for activation</div>
@@ -91,16 +102,18 @@ export default function Sidebar({ view, setView, onSignIn, onJoin, needsAttentio
           <p className="mb-2 rounded-xl bg-red-500/10 px-3 py-2 text-[11px] text-red-300">{profileError}</p>
         )}
         {session ? (
-          <div className="flex items-center gap-3 rounded-xl bg-white/5 p-2.5">
-            <Avatar name={profile?.full_name || session.user.email} className="h-9 w-9 text-xs" />
-            {!collapsed && (
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium text-white">{profile?.full_name || session.user.email}</div>
-                <div className="truncate text-[11px] text-gray-400">
-                  {profile ? (profile.role === 'admin' ? 'Administrator' : profile.facility_name || 'Facility manager') : '…'}
-                </div>
-              </div>
-            )}
+          <div className={`flex gap-3 rounded-xl bg-white/5 p-2.5 ${collapsed ? 'flex-col items-center' : 'items-center'}`}>
+            <button type="button" onClick={() => go('settings')} title="Account settings" className="flex min-w-0 flex-1 items-center gap-3 text-left">
+              <Avatar name={profile?.full_name || session.user.email} className="h-9 w-9 text-xs" />
+              {!collapsed && (
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium text-white">{profile?.full_name || session.user.email}</span>
+                  <span className="block truncate text-[11px] text-gray-400">
+                    {profile ? (profile.role === 'admin' ? 'Administrator' : profile.facility_name || 'Facility manager') : '…'}
+                  </span>
+                </span>
+              )}
+            </button>
             <button type="button" onClick={signOut} className="text-gray-400 hover:text-white" title="Sign out" aria-label="Sign out"><LogOut size={18} /></button>
           </div>
         ) : (

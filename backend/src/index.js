@@ -301,6 +301,25 @@ app.post('/api/register', handle(async (req, res) => {
 // ---------- signed-in endpoints ----------
 app.get('/api/me', authenticate, (req, res) => res.json(req.user));
 
+// Users edit their own name, phone and organisation (role, status and facility are admin-only).
+app.patch('/api/me', authenticate, handle(async (req, res) => {
+  const b = req.body || {};
+  const fields = {
+    full_name: text(b.full_name, 'Full name', 120, { required: b.full_name !== undefined }),
+    phone: text(b.phone, 'Phone', 40),
+    organisation: text(b.organisation, 'Organisation', 160),
+  };
+  const sets = []; const vals = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (v === undefined) continue;
+    vals.push(v); sets.push(`${k} = $${vals.length}`);
+  }
+  if (!sets.length) fail(400, 'Nothing to update');
+  vals.push(req.user.id);
+  await pool.query(`UPDATE profiles SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
+  res.json({ ok: true });
+}));
+
 // Update facility details. Managers: their own facility, limited fields. Admin: any facility, all fields.
 app.patch('/api/facilities/:id', ...signedIn, handle(async (req, res) => {
   const id = idParam(req);

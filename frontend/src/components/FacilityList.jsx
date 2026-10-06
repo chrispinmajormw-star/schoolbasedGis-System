@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Download, SlidersHorizontal, Plus, Pencil, UserPlus, Users, LayoutGrid } from 'lucide-react';
+import { Search, Download, SlidersHorizontal, Plus, Pencil, UserPlus, Users, LayoutGrid, PanelLeftClose } from 'lucide-react';
 import { api, CLASS_STYLE, timeAgo } from '../lib/api.js';
 import { FACILITY_TYPES, TYPE_KEYS, typeOf } from '../lib/facilityTypes.js';
 import { useAuth } from '../lib/auth.jsx';
@@ -26,7 +26,7 @@ function SpiTrack({ p }) {
   );
 }
 
-export default function FacilityList({ facilities, typeFilter, setTypeFilter, selectedId, onSelect, onAdd, onEditMine, onJoin, lastUpdated, onRefresh }) {
+export default function FacilityList({ facilities, typeFilter, setTypeFilter, selectedId, onSelect, onAdd, onEditMine, onJoin, lastUpdated, onRefresh, onHide }) {
   const { profile, isAdmin, session } = useAuth();
   const [q, setQ] = useState('');
   const [tab, setTab] = useState('all');
@@ -77,7 +77,14 @@ export default function FacilityList({ facilities, typeFilter, setTypeFilter, se
               <span className="live-dot h-1.5 w-1.5 rounded-full bg-green-500" />Live · updated {timeAgo(lastUpdated)}
             </button>
           </div>
-          <a href={api.exportUrl} className="icon-btn" title="Download CSV" aria-label="Download CSV"><Download size={16} /></a>
+          <div className="flex gap-1.5">
+            <a href={api.exportUrl} className="icon-btn" title="Download CSV" aria-label="Download CSV"><Download size={16} /></a>
+            {onHide && (
+              <button type="button" onClick={onHide} className="icon-btn hidden md:inline-flex" title="Hide list (show map only)" aria-label="Hide facilities list">
+                <PanelLeftClose size={16} />
+              </button>
+            )}
+          </div>
         </div>
         <div className="relative">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />

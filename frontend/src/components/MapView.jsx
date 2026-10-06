@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import L from 'leaflet';
 import { MapContainer, TileLayer, GeoJSON, Marker, Tooltip, ZoomControl, useMap } from 'react-leaflet';
-import { Layers, LocateFixed } from 'lucide-react';
+import { Layers, LocateFixed, PanelLeftOpen } from 'lucide-react';
 import { CLASS_STYLE, FLOOD_STYLE, rpsColor } from '../lib/api.js';
 import { BASEMAPS } from '../lib/tiles.js';
 import { typeOf, TYPE_KEYS } from '../lib/facilityTypes.js';
@@ -42,8 +42,8 @@ function FlyTo({ target }) {
   return null;
 }
 
-export default function MapView({ facilities, hazards, selected, onSelect, layers, setLayers }) {
-  const [base, setBase] = useState('standard');
+export default function MapView({ facilities, hazards, selected, onSelect, layers, setLayers, initialBase = 'standard', onShowList }) {
+  const [base, setBase] = useState(BASEMAPS[initialBase] ? initialBase : 'standard');
   const [showLayers, setShowLayers] = useState(false);
   const [map, setMap] = useState(null);
   const selectedFeature = useMemo(
@@ -86,6 +86,14 @@ export default function MapView({ facilities, hazards, selected, onSelect, layer
         })}
         <FlyTo target={selectedFeature} />
       </MapContainer>
+
+      {onShowList && (
+        <button type="button" onClick={onShowList} title="Show facilities list"
+          className="btn absolute left-3 top-3 z-[1000] hidden border border-gray-200 bg-white shadow-card md:inline-flex">
+          <PanelLeftOpen size={16} />Facilities
+          <span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold text-ink">{facilities?.features.length ?? 0}</span>
+        </button>
+      )}
 
       {/* Top-right: basemap + layers */}
       <div className="pointer-events-none absolute right-3 top-3 z-[1000] flex flex-col items-end gap-2">

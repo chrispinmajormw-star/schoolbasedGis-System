@@ -16,6 +16,8 @@ import { SetNewPassword } from './components/Login.jsx';
 import AuthPage from './components/AuthPage.jsx';
 import AdminFacilities from './components/admin/AdminFacilities.jsx';
 import AdminUsers from './components/admin/AdminUsers.jsx';
+import Settings from './components/Settings.jsx';
+import { loadPrefs, savePrefs } from './lib/prefs.js';
 
 const REFRESH_MS = 30000;
 
@@ -39,7 +41,18 @@ export default function App() {
   const [pendingCount, setPendingCount] = useState(0);
   const [error, setError] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
-  const [layers, setLayers] = useState({ flood: true, facilities: true, learnersSize: true, mode: 'spi' });
+  const [prefs, setPrefsState] = useState(loadPrefs);
+  const [listOpen, setListOpen] = useState(prefs.showList);
+  const [layers, setLayers] = useState({ flood: prefs.showFlood, facilities: true, learnersSize: prefs.sizeByPeople, mode: prefs.colourBy });
+
+  // Save a preference and apply it right away where it affects the current screen
+  const setPrefs = (patch) => {
+    setPrefsState(savePrefs(patch));
+    if ('showFlood' in patch) setLayers((l) => ({ ...l, flood: patch.showFlood }));
+    if ('sizeByPeople' in patch) setLayers((l) => ({ ...l, learnersSize: patch.sizeByPeople }));
+    if ('colourBy' in patch) setLayers((l) => ({ ...l, mode: patch.colourBy }));
+    if ('showList' in patch) setListOpen(patch.showList);
+  };
 
   const load = useCallback(async () => {
     try {
@@ -55,9 +68,12 @@ export default function App() {
   // Initial load + keep the map current while managers update their facilities.
   useEffect(() => {
     load();
+  }, [load]);
+  useEffect(() => {
+    if (!prefs.autoRefresh) return undefined;
     const t = setInterval(() => { if (document.visibilityState === 'visible') load(); }, REFRESH_MS);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, prefs.autoRefresh]);
 
   // On entry, show the sign-in / join page unless already signed in, opening a shared
   // facility link, or the visitor chose to browse as a guest in this browser session.
@@ -107,7 +123,8 @@ export default function App() {
   return (
     <div className="flex h-full flex-col md:flex-row md:gap-3 md:p-3">
       <Sidebar view={view} setView={setView} onSignIn={() => setAuthOpen('signin')} onJoin={() => setAuthOpen('register')}
-        needsAttention={mineStale} staleCount={isAdmin ? staleCount : 0} pendingCount={pendingCount} />
+        needsAttention={mineStale} staleCount={isAdmin ? staleCount : 0} pendingCount={pendingCount}
+        collapsed={prefs.sidebarCollapsed} onCollapse={(v) => setPrefs({ sidebarCollapsed: v })} />
 
       <main className="relative min-h-0 flex-1 overflow-y-auto bg-white md:overflow-hidden md:rounded-2xl md:shadow-card">
         {error && (
@@ -119,15 +136,16 @@ export default function App() {
 
         {view === 'map' && (
           <div className="flex flex-col md:h-full md:flex-row">
-            <div className="order-2 flex min-h-0 md:order-1">
+            <div className={`order-2 min-h-0 md:order-1 ${listOpen ? 'flex' : 'flex md:hidden'}`}>
               <FacilityList facilities={facilities} typeFilter={typeFilter} setTypeFilter={setTypeFilter} selectedId={selected} onSelect={setSelected}
                 onAdd={() => setEditing('new')} onEditMine={() => setView('my-facility')} onJoin={() => setAuthOpen('register')}
-                lastUpdated={lastUpdated} onRefresh={load} />
+                lastUpdated={lastUpdated} onRefresh={load} onHide={() => setListOpen(false)} />
             </div>
             <div className="relative order-1 h-[58vh] shrink-0 md:order-2 md:h-auto md:flex-1 md:shrink">
-              <MapView facilities={visible} hazards={hazards} selected={selected} onSelect={setSelected} layers={layers} setLayers={setLayers} />
+              <MapView key={prefs.basemap} facilities={visible} hazards={hazards} selected={selected} onSelect={setSelected} layers={layers} setLayers={setLayers}
+                initialBase={prefs.basemap} onShowList={listOpen ? undefined : () => setListOpen(true)} />
               {selectedProps && (
-                <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[1000] sm:bottom-auto sm:right-auto sm:top-3">
+                <div className={`pointer-events-none absolute inset-x-3 bottom-3 z-[1000] sm:bottom-auto sm:right-auto ${listOpen ? 'sm:top-3' : 'sm:top-3 md:top-16'}`}>
                   <FacilityCard facility={selectedProps} checklist={checklistFor(selectedProps)} refreshKey={refreshKey} onClose={() => setSelected(null)}
                     onEdit={() => setEditing(selectedProps.id)} onAssess={() => setAssessing(selectedProps.id)} />
                 </div>
@@ -137,6 +155,7 @@ export default function App() {
         )}
         {view === 'dashboard' && <Dashboard summary={summary} facilities={facilities} refreshKey={refreshKey} onPick={showOnMap} />}
         {view === 'about' && <About checklists={checklists} />}
+        {view === 'settings' && <Settings prefs={prefs} setPrefs={setPrefs} />}
         {view === 'my-facility' && (
           <MyFacility feature={mine} onAssess={() => setAssessing(profile.facility_id)} onShow={() => showOnMap(profile.facility_id)} onSaved={load} />
         )}

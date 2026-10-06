@@ -37,6 +37,7 @@ export const api = {
   saveAssessment: (id, data) => request(`/facilities/${id}/assessments`, { method: 'POST', body: data }),
   register: (data) => request('/register', { method: 'POST', body: data }),
   me: () => request('/me'),
+  updateMe: (data) => request('/me', { method: 'PATCH', body: data }),
   updateFacility: (id, data) => request(`/facilities/${id}`, { method: 'PATCH', body: data }),
   uploadPhoto: (id, dataUrl) => request(`/facilities/${id}/photo`, { method: 'POST', body: { dataUrl } }),
   createFacility: (data) => request('/facilities', { method: 'POST', body: data }),
