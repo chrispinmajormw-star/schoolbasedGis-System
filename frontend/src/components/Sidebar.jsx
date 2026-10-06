@@ -1,5 +1,5 @@
 import {
-  Map, LayoutDashboard, Building2, Users, FileDown, BookOpen, LogOut, LogIn, ChevronsLeft, ChevronsRight, ShieldCheck, Menu, X, UserPlus, Clock, Settings,
+  Map, LayoutDashboard, Building2, Users, FileDown, BookOpen, LogOut, LogIn, ChevronsLeft, ChevronsRight, ShieldCheck, Menu, X, UserPlus, Clock, Settings, LifeBuoy,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../lib/auth.jsx';
@@ -83,6 +83,7 @@ export default function Sidebar({ view, setView, onSignIn, onJoin, needsAttentio
         <NavItem icon={FileDown} label="Download CSV" href={api.exportUrl} collapsed={collapsed} />
         <NavItem icon={BookOpen} label="How SPI works" active={view === 'about'} onClick={() => go('about')} collapsed={collapsed} />
         <NavItem icon={Settings} label="Settings" active={view === 'settings'} onClick={() => go('settings')} collapsed={collapsed} />
+        <NavItem icon={LifeBuoy} label="Help center" active={view === 'help'} onClick={() => go('help')} collapsed={collapsed} />
       </nav>
 
       <div className="mt-auto pt-6">

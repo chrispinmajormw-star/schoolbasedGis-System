@@ -17,6 +17,7 @@ import AuthPage from './components/AuthPage.jsx';
 import AdminFacilities from './components/admin/AdminFacilities.jsx';
 import AdminUsers from './components/admin/AdminUsers.jsx';
 import Settings from './components/Settings.jsx';
+import HelpCenter from './components/HelpCenter.jsx';
 import { loadPrefs, savePrefs } from './lib/prefs.js';
 
 const REFRESH_MS = 30000;
@@ -156,6 +157,7 @@ export default function App() {
         {view === 'dashboard' && <Dashboard summary={summary} facilities={facilities} refreshKey={refreshKey} onPick={showOnMap} />}
         {view === 'about' && <About checklists={checklists} />}
         {view === 'settings' && <Settings prefs={prefs} setPrefs={setPrefs} />}
+        {view === 'help' && <HelpCenter go={setView} onJoin={() => setAuthOpen('register')} />}
         {view === 'my-facility' && (
           <MyFacility feature={mine} onAssess={() => setAssessing(profile.facility_id)} onShow={() => showOnMap(profile.facility_id)} onSaved={load} />
         )}
