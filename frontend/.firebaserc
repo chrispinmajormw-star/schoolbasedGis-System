@@ -1,5 +1,13 @@
 {
   "projects": {
     "default": "school-gis-system"
+  },
+  "targets": {
+    "school-gis-system": {
+      "hosting": {
+        "main": ["safecom-malawi"],
+        "legacy": ["school-gis-system"]
+      }
+    }
   }
 }
