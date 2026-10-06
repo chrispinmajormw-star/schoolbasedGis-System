@@ -119,6 +119,11 @@ export default function App() {
   const staleCount = useMemo(() => (facilities?.features || []).filter((f) => needsAssessment(f.properties)).length, [facilities]);
   const checklistFor = (p) => checklists?.[p.facility_type] || [];
 
+  // Map search looks through every facility; clear the type filter if the pick is hidden by it
+  const pickFromSearch = (id) => {
+    if (typeFilter !== 'all' && byId.get(id)?.properties.facility_type !== typeFilter) setTypeFilter('all');
+    setSelected(id);
+  };
   const showOnMap = (id) => { setSelected(id); setTypeFilter('all'); setView('map'); };
 
   return (
@@ -144,7 +149,8 @@ export default function App() {
             </div>
             <div className="relative order-1 h-[58vh] shrink-0 md:order-2 md:h-auto md:flex-1 md:shrink">
               <MapView key={prefs.basemap} facilities={visible} hazards={hazards} selected={selected} onSelect={setSelected} layers={layers} setLayers={setLayers}
-                initialBase={prefs.basemap} onShowList={listOpen ? undefined : () => setListOpen(true)} />
+                initialBase={prefs.basemap} onShowList={listOpen ? undefined : () => setListOpen(true)}
+                allFacilities={facilities} onPick={pickFromSearch} />
               {selectedProps && (
                 <div className={`pointer-events-none absolute inset-x-3 bottom-3 z-[1000] sm:bottom-auto sm:right-auto ${listOpen ? 'sm:top-3' : 'sm:top-3 md:top-16'}`}>
                   <FacilityCard facility={selectedProps} checklist={checklistFor(selectedProps)} refreshKey={refreshKey} onClose={() => setSelected(null)}

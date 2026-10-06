@@ -7,6 +7,7 @@ import { Layers, LocateFixed, PanelLeftOpen } from 'lucide-react';
 import { CLASS_STYLE, FLOOD_STYLE, rpsColor } from '../lib/api.js';
 import { BASEMAPS } from '../lib/tiles.js';
 import { typeOf, TYPE_KEYS } from '../lib/facilityTypes.js';
+import MapSearch from './MapSearch.jsx';
 
 const MALAWI_CENTER = [-13.3, 34.3];
 const size = (people, bySize) => (bySize ? Math.round(Math.min(34, Math.max(24, 18 + Math.sqrt(people) / 5))) : 26);
@@ -42,7 +43,7 @@ function FlyTo({ target }) {
   return null;
 }
 
-export default function MapView({ facilities, hazards, selected, onSelect, layers, setLayers, initialBase = 'standard', onShowList }) {
+export default function MapView({ facilities, hazards, selected, onSelect, layers, setLayers, initialBase = 'standard', onShowList, allFacilities, onPick }) {
   const [base, setBase] = useState(BASEMAPS[initialBase] ? initialBase : 'standard');
   const [showLayers, setShowLayers] = useState(false);
   const [map, setMap] = useState(null);
@@ -95,9 +96,10 @@ export default function MapView({ facilities, hazards, selected, onSelect, layer
         </button>
       )}
 
-      {/* Top-right: basemap + layers */}
-      <div className="pointer-events-none absolute right-3 top-3 z-[1000] flex flex-col items-end gap-2">
+      {/* Top-right: search + basemap + layers */}
+      <div className="pointer-events-none absolute right-3 top-3 z-[1001] flex flex-col items-end gap-2">
         <div className="pointer-events-auto flex items-center gap-2">
+          <MapSearch facilities={allFacilities || facilities} onPick={onPick || onSelect} />
           <div className="seg shadow-card">
             {Object.entries(BASEMAPS).map(([k, { label }]) => (
               <button key={k} type="button" onClick={() => setBase(k)} className={`seg-btn px-3.5 ${base === k ? 'seg-btn-on' : ''}`}>{label}</button>
