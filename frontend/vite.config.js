@@ -14,6 +14,8 @@ export default defineConfig({
           if (/[\\/](leaflet|react-leaflet|@react-leaflet)[\\/]/.test(id)) return 'map';
           if (id.includes('@supabase')) return 'supabase';
           if (id.includes('lucide-react')) return 'icons';
+          // Shapefile reader: only loaded on the admin Boundaries page
+          if (/[\\/](shpjs|proj4|but-unzip|parsedbf|mgrs|wkt-parser|geographiclib-geodesic|text-encoding-polyfill)[\\/]/.test(id)) return 'shapefile';
           return 'vendor';
         },
       },

@@ -54,3 +54,28 @@ FROM (VALUES
 ) AS v(code, d, a)
 JOIN facilities f ON f.code = v.code;
 -- Some facilities are left unassessed on purpose, to test the grey "not assessed" class.
+
+-- Emergency shelter capacity (schools, halls and churches commonly host displaced people)
+UPDATE facilities f SET shelter_capacity = v.cap
+FROM (VALUES ('SAMPLE-001', 600), ('SAMPLE-002', 900), ('SAMPLE-003', 500), ('SAMPLE-006', 450), ('SAMPLE-007', 700),
+             ('SAMPLE-009', 650), ('SAMPLE-010', 700), ('SAMPLE-EC1', 2500), ('SAMPLE-EC2', 1800),
+             ('SAMPLE-PW1', 400), ('SAMPLE-CH1', 350)) AS v(code, cap)
+WHERE f.code = v.code;
+
+-- Crowdsourced flood reports (one waiting for review)
+INSERT INTO flood_reports (depth, affected, description, reporter_name, status, observed_at, reviewed_at, geom) VALUES
+ ('waist', '{homes,road}', 'Shire river burst its banks near the boma. Houses flooded.', 'Sample reporter', 'verified', now() - interval '6 hours',  now() - interval '5 hours', ST_SetSRID(ST_MakePoint(35.25,-16.90),4326)),
+ ('knee',  '{road,crops}', 'Road to Makhanga under water, crops submerged.',             'Sample reporter', 'verified', now() - interval '20 hours', now() - interval '18 hours', ST_SetSRID(ST_MakePoint(35.18,-16.72),4326)),
+ ('ankle', '{road}',       'Water over the road after heavy rain.',                      'Sample reporter', 'pending',  now() - interval '2 hours',  NULL,                        ST_SetSRID(ST_MakePoint(34.82,-16.06),4326));
+
+-- Action tracker examples
+INSERT INTO actions (facility_id, indicator, title, owner, due_date, status, cost_mwk)
+SELECT f.id, v.ind, v.title, v.owner, (CURRENT_DATE + v.days)::date, v.status, v.cost
+FROM (VALUES
+ ('SAMPLE-002', 'emergency_plan', 'Develop and display an emergency preparedness plan with the committee', 'Head teacher', 30, 'in_progress', 60000),
+ ('SAMPLE-002', 'disaster_drill', 'Run an evacuation drill with all occupants',                         'ACPC Chikwawa', -5, 'open', 40000),
+ ('SAMPLE-009', 'early_warning',  'Link to the area early-warning system (radio, megaphone, SMS)',      'DoDMA district office', 60, 'open', 250000),
+ ('SAMPLE-001', 'evacuation_signage', 'Install evacuation signs along the route',                       'Head teacher', -20, 'done', 80000)
+) AS v(code, ind, title, owner, days, status, cost)
+JOIN facilities f ON f.code = v.code;
+UPDATE actions SET completed_at = now() - interval '3 days' WHERE status = 'done';

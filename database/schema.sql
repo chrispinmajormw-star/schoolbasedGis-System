@@ -1,12 +1,12 @@
 -- SafeCom (Safe Community): Mapping Community Safety & Resilience
 -- PostgreSQL / PostGIS schema for a FRESH install (Supabase SQL Editor or psql).
--- Existing databases: run migration_004_safecom.sql instead. This file deletes all data.
+-- Existing databases: run the migrations (004, then 005) instead. This file deletes all data.
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 DROP VIEW IF EXISTS facility_status, school_status;
 DROP FUNCTION IF EXISTS compute_spi(jsonb, text);
 DROP FUNCTION IF EXISTS weights_for(text);
-DROP TABLE IF EXISTS profiles, assessments, hazard_zones, indicator_weights, facilities, schools CASCADE;
+DROP TABLE IF EXISTS actions, flood_reports, admin_areas, profiles, assessments, hazard_zones, indicator_weights, facilities, schools CASCADE;
 
 -- Community facilities -------------------------------------------------------
 CREATE TABLE facilities (
@@ -20,6 +20,7 @@ CREATE TABLE facilities (
   subtype          TEXT,                     -- e.g. primary / hospital / borehole
   people_served    INTEGER NOT NULL DEFAULT 0 CHECK (people_served >= 0),  -- learners, catchment, shelter capacity ...
   staff            INTEGER NOT NULL DEFAULT 0 CHECK (staff >= 0),
+  shelter_capacity INTEGER CHECK (shelter_capacity >= 0),  -- displaced people it can host in an emergency
   dist_to_road_m   NUMERIC CHECK (dist_to_road_m >= 0),
   dist_to_health_m NUMERIC CHECK (dist_to_health_m >= 0),
   contact_name     TEXT,
@@ -45,6 +46,8 @@ CREATE TABLE indicator_weights (
   kind          TEXT NOT NULL CHECK (kind IN ('binary', 'percent')),
   weight        NUMERIC NOT NULL CHECK (weight >= 0),
   sort_order    INT NOT NULL,
+  cost_mwk      NUMERIC CHECK (cost_mwk >= 0),   -- indicative cost to close the gap (MWK); percent items: cost to reach 100%
+  action        TEXT,                            -- recommended action
   PRIMARY KEY (indicator, facility_type)
 );
 
@@ -96,9 +99,43 @@ INSERT INTO indicator_weights (indicator, facility_type, label, domain, kind, we
   ('spare_parts',          'water_point', 'Spare parts / repair arrangement',   'Water safety', 'binary',  6, 14);
 
 -- Effective checklist for one facility type (type rows override core rows).
+-- Indicative costs (MWK) and recommended actions
+UPDATE indicator_weights w SET cost_mwk = v.cost, action = v.action
+FROM (VALUES
+  ('emergency_plan',        60000, 'Develop and display an emergency preparedness plan with the committee'),
+  ('emergency_contacts',     5000, 'Post emergency contacts (ACPC/VCPC, police, health, DoDMA)'),
+  ('evacuation_route',     150000, 'Clear and mark a safe evacuation route to higher ground'),
+  ('evacuation_signage',    80000, 'Install evacuation signs along the route'),
+  ('safe_assembly_point',   60000, 'Designate and mark a safe assembly point above flood level'),
+  ('disaster_drill',        40000, 'Run an evacuation drill with all occupants'),
+  ('staff_trained_pct',    300000, 'Train staff in disaster preparedness and first aid'),
+  ('early_warning',        250000, 'Link to the area early-warning system (radio, megaphone, SMS)'),
+  ('first_aid_kit',         60000, 'Provide and stock a first aid kit'),
+  ('fire_extinguisher',    120000, 'Install and service a fire extinguisher'),
+  ('learner_awareness',     30000, 'Teach learners flood and disaster safety'),
+  ('water_sanitation',    1500000, 'Provide safe water and latrines for evacuees'),
+  ('relief_stock',         800000, 'Pre-position food and relief items'),
+  ('accessible_for_all',   600000, 'Add ramps and accessible toilets for elderly and disabled people'),
+  ('lighting_power',       450000, 'Install solar lighting or backup power'),
+  ('backup_power',        3500000, 'Install a generator or solar backup for critical services'),
+  ('emergency_stock',     1200000, 'Stock emergency medicines and supplies'),
+  ('referral_transport',  2000000, 'Arrange ambulance or motorbike referral transport'),
+  ('critical_above_flood',5000000, 'Move critical services (maternity, pharmacy) above flood level'),
+  ('drainage',            1500000, 'Repair and clear market drainage'),
+  ('clear_exits',          100000, 'Clear and mark access and exit lanes'),
+  ('market_committee',      30000, 'Form and train a market disaster committee'),
+  ('shelter_ready',        300000, 'Prepare to host evacuees (mats, space plan, caretaker)'),
+  ('raised_protected',     900000, 'Raise and protect the water point from floodwater'),
+  ('water_tested',          50000, 'Test water quality after every flood'),
+  ('water_committee',       30000, 'Revive and train the water point committee'),
+  ('spare_parts',          200000, 'Arrange spare parts and an area mechanic')
+) AS v(indicator, cost, action)
+WHERE w.indicator = v.indicator;
+
+-- Effective checklist for one facility type (type rows override core rows).
 CREATE FUNCTION weights_for(ftype TEXT)
-RETURNS TABLE (indicator TEXT, label TEXT, domain TEXT, kind TEXT, weight NUMERIC, sort_order INT) AS $$
-  SELECT DISTINCT ON (w.indicator) w.indicator, w.label, w.domain, w.kind, w.weight, w.sort_order
+RETURNS TABLE (indicator TEXT, label TEXT, domain TEXT, kind TEXT, weight NUMERIC, sort_order INT, cost_mwk NUMERIC, action TEXT) AS $$
+  SELECT DISTINCT ON (w.indicator) w.indicator, w.label, w.domain, w.kind, w.weight, w.sort_order, w.cost_mwk, w.action
     FROM indicator_weights w
    WHERE w.facility_type IN ('*', ftype)
    ORDER BY w.indicator, (w.facility_type = '*')
@@ -157,7 +194,59 @@ CREATE TABLE profiles (
 );
 CREATE INDEX profiles_facility_idx ON profiles (facility_id);
 
--- One row per ACTIVE facility: latest assessment, SPI, class, hazard overlay, Risk Priority Score.
+-- 3. Administrative boundaries (uploaded by an administrator as GeoJSON) --------------
+CREATE TABLE admin_areas (
+  id          SERIAL PRIMARY KEY,
+  level       TEXT NOT NULL CHECK (level IN ('district', 'ta')),
+  name        TEXT NOT NULL,
+  district    TEXT,                      -- parent district (for TAs)
+  population  INTEGER CHECK (population >= 0),
+  source      TEXT,
+  geom        geometry(MultiPolygon, 4326) NOT NULL
+);
+CREATE INDEX admin_areas_geom_idx ON admin_areas USING GIST (geom);
+CREATE INDEX admin_areas_level_idx ON admin_areas (level);
+
+-- 4. Crowdsourced flood reports --------------------------------------------------------
+CREATE TABLE flood_reports (
+  id             SERIAL PRIMARY KEY,
+  depth          TEXT NOT NULL CHECK (depth IN ('ankle', 'knee', 'waist', 'above_waist')),
+  affected       TEXT[] NOT NULL DEFAULT '{}',   -- homes, road, crops, facility, bridge ...
+  description    TEXT,
+  photo_url      TEXT,
+  reporter_name  TEXT,
+  reporter_phone TEXT,
+  reported_by    UUID,                            -- signed-in reporter, if any
+  status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'rejected', 'resolved')),
+  reviewed_by    UUID,
+  reviewed_at    TIMESTAMPTZ,
+  observed_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  geom           geometry(Point, 4326) NOT NULL
+);
+CREATE INDEX flood_reports_geom_idx ON flood_reports USING GIST (geom);
+CREATE INDEX flood_reports_status_idx ON flood_reports (status, observed_at DESC);
+
+-- 5. Action tracker --------------------------------------------------------------------
+CREATE TABLE actions (
+  id           SERIAL PRIMARY KEY,
+  facility_id  INTEGER NOT NULL REFERENCES facilities(id) ON DELETE CASCADE,
+  indicator    TEXT,                       -- checklist item this action closes (optional)
+  title        TEXT NOT NULL,
+  owner        TEXT,                       -- person or organisation responsible
+  due_date     DATE,
+  status       TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'done')),
+  cost_mwk     NUMERIC CHECK (cost_mwk >= 0),
+  notes        TEXT,
+  created_by   UUID,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+CREATE INDEX actions_facility_idx ON actions (facility_id);
+CREATE INDEX actions_status_idx ON actions (status, due_date);
+
+-- One row per ACTIVE facility: latest assessment, SPI, class, hazard overlay, TA, Risk Priority Score.
 CREATE VIEW facility_status WITH (security_invoker = true) AS
 WITH base AS (
   SELECT
@@ -166,7 +255,8 @@ WITH base AS (
     a.assessed_on,
     CASE WHEN a.id IS NULL THEN NULL ELSE compute_spi(a.answers, f.facility_type) END AS spi,
     COALESCE(h.level, 0) AS flood_level,
-    MAX(f.people_served) OVER (PARTITION BY f.facility_type) AS max_people  -- people compared within the same type
+    MAX(f.people_served) OVER (PARTITION BY f.facility_type) AS max_people,
+    t.name AS ta
   FROM facilities f
   LEFT JOIN LATERAL (
     SELECT * FROM assessments x WHERE x.facility_id = f.id
@@ -176,10 +266,13 @@ WITH base AS (
     SELECT MAX(z.level) AS level FROM hazard_zones z
     WHERE z.hazard = 'flood' AND ST_Intersects(z.geom, f.geom)
   ) h ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT r.name FROM admin_areas r WHERE r.level = 'ta' AND ST_Intersects(r.geom, f.geom) LIMIT 1
+  ) t ON TRUE
   WHERE f.status = 'active'
 )
 SELECT
-  id, facility_type, code, name, district, subtype, people_served, staff,
+  id, facility_type, code, name, district, ta, subtype, people_served, staff, shelter_capacity,
   dist_to_road_m, dist_to_health_m, geom,
   contact_name, contact_phone, photo_url, notes, updated_at,
   assessment_id, assessed_on, spi,
@@ -204,6 +297,9 @@ ALTER TABLE assessments       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hazard_zones      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE indicator_weights ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_areas       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE flood_reports     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE actions           ENABLE ROW LEVEL SECURITY;
 
 -- Make yourself the first admin: create the user in Supabase -> Authentication -> Users,
 -- then run (with your email):

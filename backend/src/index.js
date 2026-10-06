@@ -28,10 +28,15 @@ app.set('trust proxy', 1); // Render sits behind a proxy; needed for per-IP sign
 const origins = (process.env.CORS_ORIGIN || '*').split(',').map((s) => s.trim()).filter(Boolean);
 app.use(cors({ origin: origins.includes('*') ? '*' : origins }));
 
-// Small JSON bodies everywhere, except photo uploads (base64 image).
+// Small JSON bodies everywhere, except photo uploads (base64 image) and boundary uploads (GeoJSON).
 const smallJson = express.json({ limit: '100kb' });
 const photoJson = express.json({ limit: '6mb' });
-app.use((req, res, next) => (req.path.endsWith('/photo') ? photoJson : smallJson)(req, res, next));
+const geoJson = express.json({ limit: '40mb' });
+app.use((req, res, next) => {
+  const parser = req.path === '/api/admin-areas' ? geoJson
+    : req.path.endsWith('/photo') || req.path === '/api/flood-reports' ? photoJson : smallJson;
+  return parser(req, res, next);
+});
 
 // ---------- error handling ----------
 class HttpError extends Error {
@@ -110,6 +115,20 @@ const authenticate = handle(async (req, _res, next) => {
   next();
 });
 
+// Like authenticate, but never fails: req.user is the active profile or null (public endpoints).
+const optionalUser = handle(async (req, _res, next) => {
+  req.user = null;
+  const h = req.headers.authorization || '';
+  if (supabase && h.startsWith('Bearer ')) {
+    const { data } = await supabase.auth.getUser(h.slice(7));
+    if (data?.user) {
+      const { rows } = await pool.query(`SELECT id, role, status, facility_id, full_name FROM profiles WHERE id = $1`, [data.user.id]);
+      if (rows[0]?.status === 'active') req.user = rows[0];
+    }
+  }
+  next();
+});
+
 // Signed in AND activated by an administrator
 const requireActive = (req, res, next) => {
   if (req.user.status === 'active') return next();
@@ -130,7 +149,8 @@ function assertCanEdit(req, id) {
 // Effective checklist per type: { school: [...], market: [...] }
 async function checklists() {
   const { rows } = await pool.query(`
-    SELECT t.ftype AS facility_type, w.indicator, w.label, w.domain, w.kind, w.weight::float AS weight, w.sort_order
+    SELECT t.ftype AS facility_type, w.indicator, w.label, w.domain, w.kind, w.weight::float AS weight, w.sort_order,
+           w.cost_mwk::float AS cost_mwk, w.action
       FROM unnest($1::text[]) AS t(ftype), LATERAL weights_for(t.ftype) w
      WHERE w.weight > 0 ORDER BY t.ftype, w.sort_order, w.indicator`, [FACILITY_TYPES]);
   const out = Object.fromEntries(FACILITY_TYPES.map((t) => [t, []]));
@@ -145,7 +165,7 @@ app.get('/api/health', handle(async (_req, res) => {
 }));
 
 const FACILITY_COLUMNS = `
-  id, facility_type, code, name, district, subtype, people_served, staff,
+  id, facility_type, code, name, district, ta, subtype, people_served, staff, shelter_capacity,
   dist_to_road_m::float AS dist_to_road_m, dist_to_health_m::float AS dist_to_health_m,
   contact_name, contact_phone, photo_url, notes, updated_at,
   assessed_on, spi::float AS spi, spi_class, flood_level, rps::float AS rps,
@@ -180,6 +200,168 @@ app.get('/api/hazards', handle(async (_req, res) => {
 
 app.get('/api/checklists', handle(async (_req, res) => res.json(await checklists())));
 
+// Latest checklist answers of every active facility: { "<id>": { indicator: value } }.
+// Used for priority gaps, what-if, budget planning and the gap heatmap.
+app.get('/api/answers', handle(async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT s.id, a.answers FROM facility_status s JOIN assessments a ON a.id = s.assessment_id`);
+  res.json(Object.fromEntries(rows.map((r) => [r.id, r.answers])));
+}));
+
+// Mean SPI per quarter (assessments made in that quarter), optionally for one district.
+app.get('/api/trend', handle(async (req, res) => {
+  const district = typeof req.query.district === 'string' && req.query.district ? req.query.district : null;
+  const { rows } = await pool.query(
+    `SELECT to_char(date_trunc('quarter', a.assessed_on), 'YYYY-"Q"Q') AS quarter,
+            COUNT(*)::int AS assessments, ROUND(AVG(compute_spi(a.answers, f.facility_type)), 1)::float AS mean_spi
+       FROM assessments a JOIN facilities f ON f.id = a.facility_id
+      WHERE f.status = 'active' AND ($1::text IS NULL OR f.district = $1)
+        AND a.assessed_on >= CURRENT_DATE - INTERVAL '3 years'
+      GROUP BY 1 ORDER BY 1`, [district]);
+  res.json(rows);
+}));
+
+// ---------- administrative boundaries ----------
+app.get('/api/admin-areas', handle(async (req, res) => {
+  const level = req.query.level === 'ta' ? 'ta' : 'district';
+  const { rows } = await pool.query(
+    `SELECT id, level, name, district, population,
+            ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, $2), 5)::json AS geometry
+       FROM admin_areas WHERE level = $1 ORDER BY name`, [level, level === 'ta' ? 0.002 : 0.004]);
+  res.json({ type: 'FeatureCollection', features: rows.map(feature) });
+}));
+
+app.get('/api/admin-areas/summary', handle(async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT level, COUNT(*)::int AS areas, SUM(population)::bigint AS population, MAX(source) AS source
+       FROM admin_areas GROUP BY level`);
+  res.json(rows);
+}));
+
+// Upload district or TA polygons (GeoJSON in WGS84). Replaces the existing areas of that level.
+app.post('/api/admin-areas', ...adminOnly, handle(async (req, res) => {
+  const b = req.body || {};
+  const level = b.level === 'ta' ? 'ta' : b.level === 'district' ? 'district' : fail(400, 'Choose districts or TAs');
+  const items = Array.isArray(b.features) ? b.features : fail(400, 'No features found in the file');
+  if (!items.length) fail(400, 'No features found in the file');
+  if (items.length > 2000) fail(400, 'Too many areas (max 2000)');
+  const source = text(b.source ?? null, 'Source', 200);
+  const client = await pool.connect();
+  let n = 0;
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM admin_areas WHERE level = $1', [level]);
+    for (const it of items) {
+      const g = it.geometry;
+      if (!g || !['Polygon', 'MultiPolygon'].includes(g.type)) continue;
+      const name = text(it.name ?? null, 'Area name', 120);
+      if (!name) continue;
+      const pop = Number(it.population);
+      await client.query(
+        `INSERT INTO admin_areas (level, name, district, population, source, geom)
+         VALUES ($1, $2, $3, $4, $5, ST_Multi(ST_CollectionExtract(ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON($6), 4326)), 3)))`,
+        [level, name, text(it.district ?? null, 'District', 80), Number.isFinite(pop) && pop >= 0 ? Math.round(pop) : null,
+          source, JSON.stringify(g)]);
+      n += 1;
+    }
+    if (!n) fail(400, 'No polygons with a name were found. Check the name field.');
+    const out = await client.query(
+      `SELECT COUNT(*)::int AS n FROM admin_areas WHERE level = $1
+         AND NOT ST_Intersects(geom, ST_MakeEnvelope(32.5, -17.5, 36.5, -9.0, 4326))`, [level]);
+    if (out.rows[0].n === n) fail(400, 'These areas are not in Malawi. Export the layer in WGS 84 (EPSG:4326) and try again.');
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+  res.status(201).json({ imported: n });
+}));
+
+app.delete('/api/admin-areas', ...adminOnly, handle(async (req, res) => {
+  const level = req.query.level === 'ta' ? 'ta' : 'district';
+  const { rowCount } = await pool.query('DELETE FROM admin_areas WHERE level = $1', [level]);
+  res.json({ deleted: rowCount });
+}));
+
+// ---------- crowdsourced flood reports ----------
+const DEPTHS = ['ankle', 'knee', 'waist', 'above_waist'];
+const AFFECTED = ['homes', 'road', 'bridge', 'crops', 'facility', 'livestock', 'people_trapped'];
+const REPORT_COLUMNS = `id, depth, affected, description, photo_url, status, observed_at, created_at, reviewed_at,
+  ST_AsGeoJSON(geom)::json AS geometry`;
+
+async function storePhoto(dataUrl, folder) {
+  const m = /^data:(image\/(jpeg|png|webp));base64,(.+)$/.exec(dataUrl || '');
+  if (!m) fail(400, 'Please upload a JPG, PNG or WebP image');
+  const buf = Buffer.from(m[3], 'base64');
+  if (buf.length > 4 * 1024 * 1024) fail(400, 'Image is too large (max 4 MB)');
+  const ext = m[2] === 'jpeg' ? 'jpg' : m[2];
+  const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, buf, { contentType: m[1], upsert: false });
+  if (error) { console.error(error); fail(500, 'Could not store the photo'); }
+  return supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+// Public: verified (and recently resolved) reports from the last N days.
+app.get('/api/flood-reports', handle(async (req, res) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 14, 1), 365);
+  const { rows } = await pool.query(
+    `SELECT ${REPORT_COLUMNS} FROM flood_reports
+      WHERE status IN ('verified', 'resolved') AND observed_at >= now() - make_interval(days => $1)
+      ORDER BY observed_at DESC`, [days]);
+  res.json({ type: 'FeatureCollection', features: rows.map(feature) });
+}));
+
+// Admin: every report, including those waiting for review, with reporter contacts.
+app.get('/api/flood-reports/all', ...adminOnly, handle(async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT ${REPORT_COLUMNS}, reporter_name, reporter_phone FROM flood_reports
+      WHERE status = 'pending' OR observed_at >= now() - interval '90 days'
+      ORDER BY (status = 'pending') DESC, observed_at DESC LIMIT 500`);
+  res.json({ type: 'FeatureCollection', features: rows.map(feature) });
+}));
+
+// Anyone can report flooding. Reports from administrators are verified straight away.
+app.post('/api/flood-reports', optionalUser, handle(async (req, res) => {
+  const b = req.body || {};
+  if (b.website) fail(400, 'Invalid request'); // honeypot
+  if (!req.user) rateLimit(`report:${req.ip}`, 10, 60 * 60 * 1000, 'Too many reports from this connection. Please try again in an hour.');
+  const point = coords(b.lat, b.lon);
+  if (!point) fail(400, 'Set the flooded location on the map');
+  if (!DEPTHS.includes(b.depth)) fail(400, 'Choose how deep the water is');
+  const affected = (Array.isArray(b.affected) ? b.affected : []).filter((a) => AFFECTED.includes(a));
+  let observed = b.observed_at ? new Date(b.observed_at) : new Date();
+  if (Number.isNaN(observed.getTime()) || observed > new Date(Date.now() + 5 * 60000)) observed = new Date();
+  const photoUrl = b.photo && supabase ? await storePhoto(b.photo, 'reports') : null;
+  const verified = req.user?.role === 'admin';
+  const { rows } = await pool.query(
+    `INSERT INTO flood_reports (depth, affected, description, photo_url, reporter_name, reporter_phone, reported_by,
+                                status, reviewed_by, reviewed_at, observed_at, geom)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, ST_SetSRID(ST_MakePoint($12,$13),4326)) RETURNING id, status`,
+    [b.depth, affected, text(b.description ?? null, 'Description', 1000), photoUrl,
+      text(b.reporter_name ?? null, 'Name', 120) || req.user?.full_name || null, text(b.reporter_phone ?? null, 'Phone', 40),
+      req.user?.id || null, verified ? 'verified' : 'pending', verified ? req.user.id : null, verified ? new Date() : null,
+      observed, point[0], point[1]]);
+  res.status(201).json(rows[0]);
+}));
+
+app.patch('/api/flood-reports/:id', ...adminOnly, handle(async (req, res) => {
+  const status = req.body?.status;
+  if (!['pending', 'verified', 'rejected', 'resolved'].includes(status)) fail(400, 'Invalid status');
+  const { rowCount } = await pool.query(
+    `UPDATE flood_reports SET status = $2, reviewed_by = $3, reviewed_at = now() WHERE id = $1`,
+    [idParam(req), status, req.user.id]);
+  if (!rowCount) fail(404, 'Report not found');
+  res.json({ ok: true });
+}));
+
+app.delete('/api/flood-reports/:id', ...adminOnly, handle(async (req, res) => {
+  const { rowCount } = await pool.query('DELETE FROM flood_reports WHERE id = $1', [idParam(req)]);
+  if (!rowCount) fail(404, 'Report not found');
+  res.json({ ok: true });
+}));
+
 app.get('/api/summary', handle(async (_req, res) => {
   const [totals, byClass, byDistrict, byType, exposed, top] = await Promise.all([
     pool.query(`SELECT COUNT(*)::int AS facilities, COALESCE(SUM(people_served),0)::int AS people,
@@ -211,7 +393,7 @@ app.get('/api/summary', handle(async (_req, res) => {
 app.get('/api/export.csv', handle(async (_req, res) => {
   const [{ rows }, keys] = await Promise.all([
     pool.query(`
-      SELECT s.id, s.facility_type, s.code, s.name, s.district, s.subtype, s.people_served, s.staff,
+      SELECT s.id, s.facility_type, s.code, s.name, s.district, s.ta, s.subtype, s.people_served, s.staff, s.shelter_capacity,
              s.dist_to_road_m, s.dist_to_health_m, ST_X(s.geom) AS lon, ST_Y(s.geom) AS lat,
              s.flood_level, s.spi, s.spi_class, s.rps, a.assessed_on, a.answers
         FROM facility_status s LEFT JOIN assessments a ON a.id = s.assessment_id ORDER BY s.id`),
@@ -227,10 +409,10 @@ app.get('/api/export.csv', handle(async (_req, res) => {
 
 // ---------- public sign-up (admin activates later) ----------
 const signups = new Map(); // ip -> timestamps
-function rateLimit(ip, max = 5, windowMs = 60 * 60 * 1000) {
+function rateLimit(ip, max = 5, windowMs = 60 * 60 * 1000, message = 'Too many sign-up attempts. Please try again later.') {
   const now = Date.now();
   const recent = (signups.get(ip) || []).filter((t) => now - t < windowMs);
-  if (recent.length >= max) fail(429, 'Too many sign-up attempts. Please try again later.');
+  if (recent.length >= max) fail(429, message);
   recent.push(now);
   signups.set(ip, recent);
 }
@@ -330,6 +512,7 @@ app.patch('/api/facilities/:id', ...signedIn, handle(async (req, res) => {
   const fields = {
     subtype: text(b.subtype, 'Category', 80),
     people_served: int(b.people_served, 'People served', 0, 10000000),
+    shelter_capacity: int(b.shelter_capacity, 'Shelter capacity', 0, 1000000),
     staff: int(b.staff, 'Staff', 0, 100000),
     contact_name: text(b.contact_name, 'Contact person', 120),
     contact_phone: text(b.contact_phone, 'Phone', 40),
@@ -369,15 +552,7 @@ app.patch('/api/facilities/:id', ...signedIn, handle(async (req, res) => {
 app.post('/api/facilities/:id/photo', ...signedIn, handle(async (req, res) => {
   const id = idParam(req);
   assertCanEdit(req, id);
-  const m = /^data:(image\/(jpeg|png|webp));base64,(.+)$/.exec(req.body?.dataUrl || '');
-  if (!m) fail(400, 'Please upload a JPG, PNG or WebP image');
-  const buf = Buffer.from(m[3], 'base64');
-  if (buf.length > 4 * 1024 * 1024) fail(400, 'Image is too large (max 4 MB)');
-  const ext = m[2] === 'jpeg' ? 'jpg' : m[2];
-  const path = `${id}/${Date.now()}.${ext}`;
-  const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, buf, { contentType: m[1], upsert: false });
-  if (error) { console.error(error); fail(500, 'Could not store the photo'); }
-  const url = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
+  const url = await storePhoto(req.body?.dataUrl, String(id));
   await pool.query('UPDATE facilities SET photo_url = $1, updated_at = now() WHERE id = $2', [url, id]);
   res.json({ photo_url: url });
 }));
@@ -412,7 +587,122 @@ app.post('/api/facilities/:id/assessments', ...signedIn, handle(async (req, res)
   res.status(201).json(rows[0]);
 }));
 
+// ---------- action tracker ----------
+const ACTION_STATUS = ['open', 'in_progress', 'done'];
+const dateOrNull = (v, field) => {
+  if (v === undefined) return undefined;
+  if (v === null || v === '') return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) fail(400, `${field} must be a date`);
+  return String(v);
+};
+const money = (v) => {
+  if (v === undefined) return undefined;
+  if (v === null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 1e12) fail(400, 'Cost must be a positive amount');
+  return Math.round(n);
+};
+
+// Admins see every action; facility managers see their own facility's actions.
+app.get('/api/actions', ...signedIn, handle(async (req, res) => {
+  const mine = req.user.role === 'admin' ? null : req.user.facility_id;
+  const { rows } = await pool.query(
+    `SELECT a.id, a.facility_id, a.indicator, a.title, a.owner, a.due_date, a.status, a.cost_mwk::float AS cost_mwk,
+            a.notes, a.created_at, a.updated_at, a.completed_at,
+            f.name AS facility_name, f.facility_type, f.district
+       FROM actions a JOIN facilities f ON f.id = a.facility_id
+      WHERE ($1::int IS NULL OR a.facility_id = $1)
+      ORDER BY (a.status = 'done'), a.due_date NULLS LAST, a.id`, [mine]);
+  res.json(rows);
+}));
+
+function actionFields(b, { creating }) {
+  const status = b.status === undefined ? undefined : ACTION_STATUS.includes(b.status) ? b.status : fail(400, 'Invalid status');
+  return {
+    title: text(b.title, 'Action', 300, { required: creating || b.title !== undefined }),
+    indicator: text(b.indicator, 'Checklist item', 60),
+    owner: text(b.owner, 'Responsible', 160),
+    due_date: dateOrNull(b.due_date, 'Due date'),
+    status,
+    cost_mwk: money(b.cost_mwk),
+    notes: text(b.notes, 'Notes', 2000),
+  };
+}
+
+async function insertAction(db, user, b) {
+  const facilityId = int(b.facility_id, 'Facility', 1, 2147483647) || fail(400, 'Choose a facility');
+  if (user.role !== 'admin' && user.facility_id !== facilityId) fail(403, 'You can only plan actions for your own facility');
+  const f = actionFields(b, { creating: true });
+  const { rows } = await db.query(
+    `INSERT INTO actions (facility_id, indicator, title, owner, due_date, status, cost_mwk, notes, created_by, completed_at)
+     VALUES ($1,$2,$3,$4,$5,COALESCE($6,'open'),$7,$8,$9, CASE WHEN $6 = 'done' THEN now() END) RETURNING id`,
+    [facilityId, f.indicator ?? null, f.title, f.owner ?? null, f.due_date ?? null, f.status ?? null, f.cost_mwk ?? null,
+      f.notes ?? null, user.id]);
+  return rows[0].id;
+}
+
+app.post('/api/actions', ...signedIn, handle(async (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items : [req.body || {}];
+  if (!items.length || items.length > 500) fail(400, 'Add between 1 and 500 actions at a time');
+  const client = await pool.connect();
+  const ids = [];
+  try {
+    await client.query('BEGIN');
+    for (const it of items) ids.push(await insertAction(client, req.user, it));
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+  res.status(201).json({ ids });
+}));
+
+async function assertActionAccess(req) {
+  const { rows } = await pool.query('SELECT facility_id FROM actions WHERE id = $1', [idParam(req)]);
+  if (!rows[0]) fail(404, 'Action not found');
+  assertCanEdit(req, rows[0].facility_id);
+}
+
+app.patch('/api/actions/:id', ...signedIn, handle(async (req, res) => {
+  await assertActionAccess(req);
+  const fields = actionFields(req.body || {}, { creating: false });
+  const sets = []; const vals = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (v === undefined) continue;
+    vals.push(v); sets.push(`${k} = $${vals.length}`);
+  }
+  if (!sets.length) fail(400, 'Nothing to update');
+  if (fields.status) {
+    const i = Object.keys(fields).filter((k) => fields[k] !== undefined).indexOf('status') + 1;
+    sets.push(`completed_at = CASE WHEN $${i} = 'done' THEN COALESCE(completed_at, now()) ELSE NULL END`);
+  }
+  vals.push(idParam(req));
+  await pool.query(`UPDATE actions SET ${sets.join(', ')}, updated_at = now() WHERE id = $${vals.length}`, vals);
+  res.json({ ok: true });
+}));
+
+app.delete('/api/actions/:id', ...signedIn, handle(async (req, res) => {
+  await assertActionAccess(req);
+  await pool.query('DELETE FROM actions WHERE id = $1', [idParam(req)]);
+  res.json({ ok: true });
+}));
+
 // ---------- admin ----------
+// Edit indicative costs / recommended actions of checklist items (applies to every facility type).
+app.patch('/api/indicator-costs', ...adminOnly, handle(async (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items : fail(400, 'Nothing to update');
+  for (const it of items) {
+    const cost = money(it.cost_mwk);
+    const action = text(it.action, 'Recommended action', 300);
+    await pool.query(
+      `UPDATE indicator_weights SET cost_mwk = COALESCE($2, cost_mwk), action = COALESCE($3, action) WHERE indicator = $1`,
+      [String(it.indicator || ''), cost ?? null, action ?? null]);
+  }
+  res.json({ ok: true });
+}));
+
 app.get('/api/activity', ...adminOnly, handle(async (_req, res) => {
   const { rows } = await pool.query(`
     SELECT * FROM (
@@ -436,15 +726,15 @@ app.post('/api/facilities', ...adminOnly, handle(async (req, res) => {
   if (!point) fail(400, 'Set the facility location on the map');
   const { rows } = await pool.query(
     `INSERT INTO facilities (facility_type, name, code, district, subtype, people_served, staff, dist_to_road_m,
-                             dist_to_health_m, contact_name, contact_phone, notes, geom, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, ST_SetSRID(ST_MakePoint($13,$14),4326), now()) RETURNING id`,
+                             dist_to_health_m, contact_name, contact_phone, notes, shelter_capacity, geom, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$15, ST_SetSRID(ST_MakePoint($13,$14),4326), now()) RETURNING id`,
     [facilityType(b.facility_type, { required: true }), text(b.name, 'Facility name', 200, { required: true }),
       text(b.code ?? null, 'Code', 40), text(b.district, 'District', 80, { required: true }), text(b.subtype ?? null, 'Category', 80),
       int(b.people_served ?? 0, 'People served', 0, 10000000) ?? 0, int(b.staff ?? 0, 'Staff', 0, 100000) ?? 0,
       int(b.dist_to_road_m ?? null, 'Distance to road', 0, 200000),
       int(b.dist_to_health_m ?? null, 'Distance to health facility', 0, 200000),
       text(b.contact_name ?? null, 'Contact person', 120), text(b.contact_phone ?? null, 'Phone', 40),
-      text(b.notes ?? null, 'Notes', 2000), point[0], point[1]]);
+      text(b.notes ?? null, 'Notes', 2000), point[0], point[1], int(b.shelter_capacity ?? null, 'Shelter capacity', 0, 1000000)]);
   res.status(201).json({ id: rows[0].id });
 }));
 

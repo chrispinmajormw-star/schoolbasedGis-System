@@ -66,3 +66,49 @@ export function Avatar({ name, className = '' }) {
     <span className={`inline-flex shrink-0 items-center justify-center rounded-xl bg-accent font-semibold text-ink ${className}`}>{initials}</span>
   );
 }
+
+export function Stat({ icon: Icon, label, value, sub, tone }) {
+  const tones = { red: 'bg-red-50 text-red-700', green: 'bg-green-50 text-green-700', default: 'bg-accent-soft text-ink' };
+  return (
+    <div className="card p-4">
+      <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+        {Icon && <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${tones[tone] || tones.default}`}><Icon size={14} /></span>}
+        {label}
+      </div>
+      <div className={`mt-3 text-2xl font-semibold tracking-tight ${tone === 'red' ? 'text-red-700' : tone === 'green' ? 'text-green-700' : ''}`}>{value}</div>
+      {sub && <div className="mt-0.5 text-xs text-gray-400">{sub}</div>}
+    </div>
+  );
+}
+
+export function PageHeader({ title, subtitle, children }) {
+  return (
+    <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h1 className="text-lg font-semibold">{title}</h1>
+        {subtitle && <p className="max-w-2xl text-xs text-gray-500">{subtitle}</p>}
+      </div>
+      {children && <div className="no-print flex flex-wrap items-center gap-2">{children}</div>}
+    </div>
+  );
+}
+
+export function Seg({ value, onChange, options, className = '' }) {
+  return (
+    <div className={`seg ${className}`}>
+      {options.map(([k, label]) => (
+        <button key={k} type="button" onClick={() => onChange(k)} className={`seg-btn whitespace-nowrap ${value === k ? 'seg-btn-on' : ''}`}>{label}</button>
+      ))}
+    </div>
+  );
+}
+
+export function Empty({ icon: Icon, title, children }) {
+  return (
+    <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+      {Icon && <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-400"><Icon size={22} /></span>}
+      <p className="font-medium text-gray-700">{title}</p>
+      {children && <div className="mt-1 max-w-sm text-xs text-gray-500">{children}</div>}
+    </div>
+  );
+}

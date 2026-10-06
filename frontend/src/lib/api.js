@@ -49,6 +49,23 @@ export const api = {
   setPassword: (id, password) => request(`/users/${id}`, { method: 'PATCH', body: { password } }),
   deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
   activity: () => request('/activity'),
+  // decision support
+  answers: () => request('/answers'),
+  trend: (district) => request(`/trend${district && district !== 'all' ? `?district=${encodeURIComponent(district)}` : ''}`),
+  updateCosts: (items) => request('/indicator-costs', { method: 'PATCH', body: { items } }),
+  adminAreas: (level = 'district') => request(`/admin-areas?level=${level}`),
+  adminAreasSummary: () => request('/admin-areas/summary'),
+  uploadAdminAreas: (data) => request('/admin-areas', { method: 'POST', body: data }),
+  deleteAdminAreas: (level) => request(`/admin-areas?level=${level}`, { method: 'DELETE' }),
+  floodReports: (days = 14) => request(`/flood-reports?days=${days}`),
+  allFloodReports: () => request('/flood-reports/all'),
+  reportFlood: (data) => request('/flood-reports', { method: 'POST', body: data }),
+  reviewReport: (id, status) => request(`/flood-reports/${id}`, { method: 'PATCH', body: { status } }),
+  deleteReport: (id) => request(`/flood-reports/${id}`, { method: 'DELETE' }),
+  actions: () => request('/actions'),
+  createActions: (items) => request('/actions', { method: 'POST', body: { items } }),
+  updateAction: (id, data) => request(`/actions/${id}`, { method: 'PATCH', body: data }),
+  deleteAction: (id) => request(`/actions/${id}`, { method: 'DELETE' }),
   exportUrl: `${BASE}/export.csv`,
 };
 

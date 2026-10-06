@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  LifeBuoy, Search, ChevronDown, Rocket, Building2, ShieldCheck, Map as MapIcon, Wrench, Mail, UserPlus, ClipboardCheck, BookOpen,
+  LifeBuoy, Search, ChevronDown, Rocket, Building2, ShieldCheck, Map as MapIcon, Wrench, Mail, UserPlus, ClipboardCheck, BookOpen, Target,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth.jsx';
 
@@ -41,11 +41,27 @@ const TOPICS = [
     ],
   },
   {
+    key: 'decide', title: 'Decision support', icon: Target,
+    items: [
+      ['Which facilities should we help first?', 'Open "Priorities". "Act now" ranks assessed facilities by risk priority score and shows the missing items worth the most SPI points. "Assess first" lists facilities in flood zones that have never been assessed, so their risk is unknown.'],
+      ['What does "What if…" do?', 'It lets you tick the improvements you are considering and shows the new SPI, preparedness class and risk score, plus the indicative cost, before any money is spent. Facility managers and administrators can save the ticked items straight into the action tracker.'],
+      ['How does the budget planner choose actions?', 'Enter a budget in kwacha. SafeCom ranks every missing item by preparedness value per kwacha: SPI points gained × flood exposure × people served, divided by cost. It then picks from the top until the budget is used. Costs are indicative and administrators can change them under "Unit costs".'],
+      ['How do I run a flood scenario?', 'Open "Flood scenario" and choose a flood extent: the mapped flood zones, an area you draw, a circle around a point, or recent verified flood reports. SafeCom lists affected facilities, shelter places lost, safe shelters within reach and whether there is a shortfall. Set "People needing shelter" when you have official figures.'],
+      ['What is "Can shelter"?', 'The number of displaced people a school, church, hall or evacuation centre can host. Keep it up to date in facility information. Flood scenarios and district briefs use it to check shelter capacity.'],
+      ['What do the gap heatmap and hotspots show?', 'The heatmap shows, for each district, the share of assessed facilities lacking each checklist item. Dark columns suit a district-wide programme. Hotspots use the Getis-Ord Gi* statistic to find clusters of low preparedness that are unlikely to be chance.'],
+      ['How do flood reports and alerts work?', 'Anyone can press "Report flooding", mark the place, choose the water depth and add a photo. An administrator verifies it, then it appears on the map, and facilities within 5 km are put on flood alert for 72 hours. Their cards, "My facility" and the dashboard show the alert.'],
+      ['How do I track progress?', 'The "Action tracker" lists every planned improvement with who is responsible, a due date, status and cost. Overdue actions are shown in red and counted in the menu. When an action is done, update the facility assessment so its SPI reflects it.'],
+      ['How do I make a brief for a DCPC meeting?', 'Open "District brief", choose the district and press "Print / save as PDF". It covers key messages, priority facilities, the most common gaps, flood exposure, the SPI trend and the action plan.'],
+    ],
+  },
+  {
     key: 'admins', title: 'For administrators', icon: ShieldCheck, adminOnly: true,
     items: [
       ['How do I activate a new account?', 'Open "User accounts". Requests appear at the top with the person\'s phone, organisation and facility. For a proposed facility, use "Check location" first. You can link the request to an existing facility instead. Then choose "Activate" or "Reject".'],
       ['How do I add a facility or an account myself?', '"Manage facilities" → "Add facility" creates a facility directly. "User accounts" → "Add user" creates an active account with a temporary password that you share with the person.'],
       ['Someone forgot their password.', 'They can use "Forgot password?" on the sign-in page. Or, in "User accounts", press the key icon to set a new temporary password and share it with them.'],
+      ['How do I load district and TA boundaries?', 'Open "Boundaries", choose Districts or Traditional Authorities, and upload a zipped shapefile (.shp, .shx, .dbf, .prj) or a GeoJSON file. Pick the name, district and population fields and press Replace. Districts shade the analysis maps; every facility gets its TA automatically.'],
+      ['How do I review flood reports?', 'Open "Flood reports". New reports wait under "To review". Call the reporter if needed, then choose Verify or Reject. When the water goes down, choose "Water receded" so the alerts stop.'],
       ['How do I stop someone from editing?', 'In "User accounts", press the block icon to disable the account. They can still sign in and browse but cannot change anything. Use the same button to enable it again.'],
     ],
   },

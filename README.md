@@ -19,8 +19,11 @@ psql "$DATABASE_URL" -f database/schema.sql
 psql "$DATABASE_URL" -f database/seed.sql      # fictional sample data
 ```
 
-**Existing School Preparedness GIS database**: run `database/migration_004_safecom.sql` once
-(after `migration_002_users.sql`). It renames schools to facilities and keeps all data and accounts.
+**Existing database**: run each migration once, in order, and keep all data and accounts:
+
+1. `migration_004_safecom.sql` (after `migration_002_users.sql`): schools → community facilities.
+2. `migration_005_decisions.sql`: decision support — unit costs, shelter capacity, district/TA boundaries,
+   crowdsourced flood reports and the action tracker.
 
 In Supabase, paste the files into the SQL Editor instead of using `psql`.
 

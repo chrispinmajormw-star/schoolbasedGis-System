@@ -13,7 +13,7 @@ function initial(s) {
   const p = s?.properties || {};
   return {
     facility_type: p.facility_type || 'school', name: p.name || '', code: p.code || '', district: p.district || '',
-    subtype: p.subtype || '', people_served: p.people_served ?? '', staff: p.staff ?? '',
+    subtype: p.subtype || '', people_served: p.people_served ?? '', staff: p.staff ?? '', shelter_capacity: p.shelter_capacity ?? '',
     contact_name: p.contact_name || '', contact_phone: p.contact_phone || '', notes: p.notes || '',
     dist_to_road_m: p.dist_to_road_m ?? '', dist_to_health_m: p.dist_to_health_m ?? '', lat, lon,
   };
@@ -41,6 +41,7 @@ export default function FacilityEditor({ feature, onSaved, onClose, inline = fal
     setSaving(true); setError(''); setSaved(false);
     const body = {
       subtype: f.subtype, people_served: f.people_served, staff: f.staff, contact_name: f.contact_name,
+      shelter_capacity: T.canShelter ? f.shelter_capacity : null,
       contact_phone: f.contact_phone, notes: f.notes, lat: f.lat, lon: f.lon,
     };
     if (isAdmin) Object.assign(body, {
@@ -104,6 +105,9 @@ export default function FacilityEditor({ feature, onSaved, onClose, inline = fal
           <Field label="Category"><SubtypeInput type={f.facility_type} value={f.subtype} onChange={set('subtype')} /></Field>
           <Field label={T.people}><input required type="number" inputMode="numeric" min="0" value={f.people_served} onChange={set('people_served')} className="input" /></Field>
           <Field label={T.staff}><input required type="number" inputMode="numeric" min="0" value={f.staff} onChange={set('staff')} className="input" /></Field>
+          {T.canShelter && (
+            <Field label="Can shelter (people)" hint="Displaced people it can host in a flood"><input type="number" inputMode="numeric" min="0" value={f.shelter_capacity} onChange={set('shelter_capacity')} className="input" placeholder="0 = not a shelter" /></Field>
+          )}
           <Field label="Contact person" className="col-span-2 sm:col-span-1"><input value={f.contact_name} onChange={set('contact_name')} className="input" placeholder="Focal person" /></Field>
           <Field label="Phone" className="col-span-2 sm:col-span-2"><input type="tel" value={f.contact_phone} onChange={set('contact_phone')} className="input" placeholder="+265 …" /></Field>
           {isAdmin && (

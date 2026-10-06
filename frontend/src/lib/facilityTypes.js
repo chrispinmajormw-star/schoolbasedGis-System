@@ -3,11 +3,13 @@ import { School, Tent, Hospital, Store, Church, Landmark, Droplets } from 'lucid
 // One entry per facility type. Labels adapt forms and cards to each type.
 export const FACILITY_TYPES = {
   school: {
+    canShelter: true,
     label: 'School', plural: 'Schools', icon: School,
     people: 'Learners', staff: 'Teachers', codeLabel: 'EMIS code',
     subtypes: ['Primary', 'Secondary', 'Tertiary', 'Early childhood centre'],
   },
   evacuation_centre: {
+    canShelter: true,
     label: 'Evacuation centre', plural: 'Evacuation centres', icon: Tent,
     people: 'Shelter capacity (people)', staff: 'Camp staff / volunteers', codeLabel: 'Site code',
     subtypes: ['Designated centre', 'Temporary camp', 'Relocation site'],
@@ -23,11 +25,13 @@ export const FACILITY_TYPES = {
     subtypes: ['Daily market', 'Weekly market'],
   },
   place_of_worship: {
+    canShelter: true,
     label: 'Place of worship', plural: 'Places of worship', icon: Church,
     people: 'Congregation size', staff: 'Leaders / staff', codeLabel: 'Code',
     subtypes: ['Church', 'Mosque', 'Other'],
   },
   community_hall: {
+    canShelter: true,
     label: 'Community hall', plural: 'Community halls', icon: Landmark,
     people: 'Hall capacity (people)', staff: 'Caretakers', codeLabel: 'Code',
     subtypes: ['Community hall', 'Community centre', 'Youth centre'],

@@ -74,7 +74,7 @@ A type can **add** items, **relabel** a core item (for example "Teachers trained
 | Community hall | Ready to host evacuees (8); safe water and sanitation (8) | none | 116 |
 | Water point | Raised / protected from floodwater (12); water quality tested after floods (10); active water point committee (8); spare parts / repair arrangement (6) | Evacuation route, signage, assembly point, first aid kit, fire extinguisher | 92 |
 
-**Comparability across types.** Because every SPI is a percentage of its own checklist, scores share the same 0–100 scale and class thresholds. The ten core items are measured the same way for every type, so cross-type statistics (Section 9) use the core items only, and type-specific items are analysed within each type.
+**Comparability across types.** Because every SPI is a percentage of its own checklist, scores share the same 0–100 scale and class thresholds. The ten core items are measured the same way for every type, so cross-type statistics (Section 11) use the core items only, and type-specific items are analysed within each type.
 
 **Important caveat.** All weights are expert-judgement defaults, not empirically calibrated values. Before the index informs funding or planning decisions, they should be validated with a Delphi round or AHP pairwise comparison. Panellists should include DoDMA, district councils (DoDMA desk officers and district education and health offices), the Ministries of Education and Health, facility managers and NGO partners. Weights are stored as data in the `indicator_weights` table, so they can be changed without touching code.
 
@@ -87,7 +87,7 @@ SPI(t) = 100 × Σ(weight_i × score_i) / Σ(weight_i)
 ```
 
 **Worked example 1: school.** Sample School A meets: emergency plan 12, contacts 8, route 10, assembly point 10, drill 12, early warning 12, first aid 10 (= 74). Teachers trained: 12 × 0.60 = 7.2. Signage, extinguisher and learner awareness: 0.
-SPI = 100 × 81.2 / 108 = **75.2% (moderate)**. With equal weights the same school scores 69.1%. Both are moderate, but the gap shows the weights matter, which is why sensitivity testing is part of the validation (Section 9).
+SPI = 100 × 81.2 / 108 = **75.2% (moderate)**. With equal weights the same school scores 69.1%. Both are moderate, but the gap shows the weights matter, which is why sensitivity testing is part of the validation (Section 11).
 
 **Worked example 2: health facility.** Sample District Hospital meets all core items except 35% of staff untrained (core = 88 + 12 × 0.65 = 95.8), plus backup power 10, emergency stock 10 and referral transport 8 (= 28). Critical services are not above flood level.
 SPI = 100 × 123.8 / 136 = **91.0% (high)**.
@@ -131,7 +131,8 @@ RPS = 100 × H × V × E × A / 1.5
    - **Facility managers:** update only their own facility (people served, staff, contact details, location, photo, notes) and submit preparedness assessments.
    - **Administrators:** can edit every facility and manage accounts (activate, disable, reset passwords).
 4. **Audit trail.** Every assessment stores the assessor, assessment date, the submitting account and a timestamp, and the date a facility's information was last edited is recorded too. The dashboard shows recent activity to administrators.
-5. **Freshness.** Public maps refresh automatically every 30 seconds. Facilities whose last assessment is more than 180 days old, or that have never been assessed, appear in a "Needs assessment" list.
+5. **Crowdsourced flood observations.** Anyone, signed in or not, can report flooding: location (GPS or map pin), water depth on a four-step body scale (ankle, knee, waist, above the waist), what is affected, time observed, an optional photo and optional contact details. Reports are **pending** until an administrator verifies them (for example by calling the reporter or a nearby facility). Only verified reports are shown publicly and trigger alerts. Reports from administrators are verified on entry. Anonymous submissions are rate-limited and screened with a hidden honeypot field.
+6. **Freshness.** Public maps refresh automatically every 30 seconds. Facilities whose last assessment is more than 180 days old, or that have never been assessed, appear in a "Needs assessment" list.
 
 ## 9. Spatial representation
 
@@ -139,9 +140,9 @@ RPS = 100 × H × V × E × A / 1.5
 - **Hazard layer:** flood hazard zones shaded by level 1–3.
 - **Overlay logic:** hazard level is attached to each facility with a PostGIS `ST_Intersects` point-in-polygon test, recalculated whenever a facility moves.
 - **Accessibility:** distance to the nearest road and nearest health facility is stored per facility. It currently comes from QGIS nearest-neighbour analysis. A planned extension calculates both automatically in PostGIS from imported national road and health facility layers.
-- **Administrative units (planned):** district and Traditional Authority will be assigned automatically from boundary polygons, allowing aggregation by TA.
+- **Administrative units:** administrators upload district and Traditional Authority polygons (zipped shapefile in any projection with a `.prj`, or GeoJSON). Each facility's TA is assigned automatically with a point-in-polygon join in the `facility_status` view, and district polygons are shaded by mean SPI.
 - **Basemaps:** OpenStreetMap standard and Humanitarian (HOT) styles. No commercial keys are required.
-- **Decision support:**
+- **Descriptive outputs** (decision-support methods are in Section 10):
   - Dashboard totals and mean SPI.
   - People depending on low-SPI facilities in medium or high flood zones.
   - SPI by facility type and by district.
@@ -150,7 +151,72 @@ RPS = 100 × H × V × E × A / 1.5
   - SPI trend per facility.
   - CSV export for R, Python, Excel or QGIS.
 
-## 10. Validation plan
+## 10. Decision-support methods
+
+The system moves from describing facilities to supporting five decisions: **where to act first, what to fund, what happens in a flood, which areas need programmes, and whether plans are carried out.** All calculations use the same SPI and RPS definitions as Sections 5 and 7.
+
+### 10.1 Priority worklist and gap value
+
+For facility *f* with checklist weights *wᵢ* and current item scores *sᵢ* ∈ [0, 1], the **SPI gain** from closing item *i* is
+
+```
+gainᵢ = 100 × wᵢ × (1 − sᵢ) / Σ w
+```
+
+The worklist ranks assessed facilities by RPS (ties broken by SPI gap in flood zones) and lists each facility's three items with the largest gain. Facilities in flood zones with **no assessment** are listed separately as "assess first", because their risk cannot be scored.
+
+### 10.2 What-if simulation
+
+A user selects a set of improvements *F* (for percentage items, a target level). The projected SPI, class and RPS are recalculated with the same formulas, and the indicative cost is
+
+```
+cost(F) = Σ_{i∈F} cᵢ × (s'ᵢ − sᵢ)
+```
+
+where *cᵢ* is the unit cost of fully closing item *i* and *s'ᵢ* the target score. Selected improvements can be saved as tracked actions (Section 10.6).
+
+### 10.3 Budget allocation (cost-effectiveness)
+
+Each open gap *i* at facility *f* is given a **benefit**
+
+```
+benefitᵢf = gainᵢf × X(hf) × (0.5 + 0.5 × Ef)
+X(h) = 0.25, 0.50, 0.75, 1.00 for flood level h = 0, 1, 2, 3
+Ef = people served / maximum people served for the facility type   (as in the RPS)
+```
+
+Gaps are sorted by **benefit per kwacha** (benefitᵢf / costᵢf) and selected greedily until the budget *B* is exhausted. This is the standard ratio heuristic for the 0/1 knapsack problem: it is transparent and near-optimal when individual costs are small relative to *B*. Outputs are the selected actions, facilities improved, people served by them, mean SPI change and the number of facilities leaving the Low class.
+
+**Unit costs** (MWK) are indicative planning figures stored in `indicator_weights.cost_mwk` and editable by administrators. They should be replaced with district procurement prices, and the allocation re-run as a sensitivity check (for example ±30% on all costs).
+
+### 10.4 Flood scenario analysis
+
+A flood extent *Z* is defined in one of four ways: (a) mapped hazard zones at or above a chosen level; (b) a polygon drawn by the user; (c) a circle of radius *r* around a point; (d) buffers of radius *r* around verified flood reports from the last *d* days. Then:
+
+- **Affected facilities**: point-in-polygon test against *Z*.
+- **Shelters**: facilities with a stated shelter capacity *Kf* (schools, evacuation centres, places of worship, community halls). Shelters inside *Z* are lost; those outside are safe.
+- **Nearest safe shelter** for each affected facility, by great-circle (haversine) distance. Shelters within a maximum distance *D* (default 10 km) of any affected facility count as **reachable**.
+- **Shelter balance** = Σ *Kf* of reachable safe shelters − *P*, where *P* is the number of people needing shelter. *P* defaults to the people served by affected water points (a proxy for the resident population) and should be replaced by official DoDMA / Initial Rapid Assessment figures when available.
+
+### 10.5 Spatial patterns
+
+- **District comparison:** mean SPI, share of facilities not assessed, and people at risk (people served by low-SPI facilities in medium/high flood zones), shown as a choropleth on uploaded district boundaries (or proportional circles if none are loaded).
+- **Gap heatmap:** for each district *d* and core item *i*, the share of assessed facilities lacking the item (percentage items: below 50%). Widespread gaps suit district-wide programmes; isolated gaps suit facility-level support.
+- **Hotspot analysis (Getis-Ord Gi\*):** for each assessed facility, with binary weights *wᵢⱼ* = 1 if *j* is within a fixed distance band (10, 25, 50 or 100 km, self included):
+
+```
+Gi* = (Σⱼ wᵢⱼ xⱼ − x̄ Σⱼ wᵢⱼ) / ( S × √[(n Σⱼ wᵢⱼ² − (Σⱼ wᵢⱼ)²) / (n − 1)] )
+```
+
+where *xⱼ* is SPI, *x̄* and *S* the mean and standard deviation over all *n* facilities. |z| ≥ 1.645, 1.96 and 2.576 mark clusters at 90%, 95% and 99% confidence. Negative z = **cluster of low preparedness**. Results are indicative below about 30 assessed facilities, and band choice should be justified (for example, typical district radius) and tested for sensitivity.
+
+### 10.6 Alerts and action tracking
+
+- **Flood alert:** a facility within 5 km of a verified report observed in the last 72 hours is flagged on the map, its card, the manager's "My facility" page and the dashboard.
+- **Action tracker:** each action records facility, linked checklist item, responsible person or organisation, due date, status (to do, in progress, done), cost and completion date. Overdue = not done after the due date. Indicators for the evaluation: share of planned actions completed on time, committed vs completed cost, and SPI change at re-assessment after actions are completed.
+- **District brief:** a printable summary per district (or national) generated from the same data: key messages, top 10 priority facilities, most common gaps, SPI by type, flood exposure and shelter places, quarterly SPI trend and action plan status, for District Civil Protection Committee meetings.
+
+## 11. Validation plan
 
 1. **Internal consistency:** Cronbach's alpha on the 10 core items, for all facilities and per type with enough cases (`analysis/spi_analysis.py`).
 2. **Weight sensitivity:**
@@ -165,16 +231,19 @@ RPS = 100 × H × V × E × A / 1.5
 5. **Face validity:** review rankings and maps with DoDMA, district councils and sector officers.
 6. **Usability and participation:** track sign-ups, activation time, the share of facilities assessed and the share assessed within 180 days, by district and type. Optionally add a short usability questionnaire such as the System Usability Scale.
 
-## 11. Limitations
+## 12. Limitations
 
 - Weights are expert defaults until validated (Section 4).
-- Self-reported data may be optimistic. Verification (Sections 8 and 10) reduces but does not remove this.
+- Self-reported data may be optimistic. Verification (Sections 8 and 11) reduces but does not remove this.
 - Yes/no indicators record whether something exists, not its quality (for example, an emergency plan that is out of date).
 - Flood layers in the sample database are coarse placeholders and must be replaced with official hazard maps.
 - Exposure uses people served, not the number present at the moment a hazard strikes (for example, school hours or market days).
+- Flood scenarios use straight-line distance and do not yet model road networks, cut bridges or the time of day.
+- Unit costs and the budget heuristic are planning aids; actual costs vary by location and contractor.
+- Crowdsourced flood reports depend on who has a phone and data, and on timely verification.
 - Participation depends on internet access and digital literacy. Administrators can enter data on behalf of facilities to reduce this bias.
 
-## 12. Data sources (to replace the sample data)
+## 13. Data sources (to replace the sample data)
 
 | Layer | Source |
 |---|---|
@@ -189,7 +258,7 @@ RPS = 100 × H × V × E × A / 1.5
 
 The seed data in `database/seed.sql` is **fictional sample data** for testing the system only.
 
-## 13. System implementation (summary)
+## 14. System implementation (summary)
 
 - **Frontend:** React + Leaflet (OpenStreetMap tiles), hosted on Firebase Hosting (`safecom-malawi.web.app`).
 - **API:** Node/Express on Render.

@@ -1,5 +1,6 @@
 import {
   Map, LayoutDashboard, Building2, Users, FileDown, BookOpen, LogOut, LogIn, ChevronsLeft, ChevronsRight, ShieldCheck, Menu, X, UserPlus, Clock, Settings, LifeBuoy,
+  Target, Waves, ChartNoAxesCombined, Megaphone, ListChecks, FileText, MapPinned,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../lib/auth.jsx';
@@ -8,7 +9,7 @@ import { Avatar } from './ui.jsx';
 import { typeOf } from '../lib/facilityTypes.js';
 
 function NavItem({ icon: Icon, label, active, onClick, badge, collapsed, href }) {
-  const cls = `group relative flex w-full items-center gap-3 rounded-xl py-2.5 text-[13px] font-medium transition ${
+  const cls = `group relative flex w-full items-center gap-3 rounded-xl py-2 text-[13px] font-medium transition ${
     collapsed ? 'justify-center px-0' : 'px-3'} ${
     active ? 'bg-white/10 text-white' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`;
   const inner = (
@@ -26,7 +27,9 @@ function NavItem({ icon: Icon, label, active, onClick, badge, collapsed, href })
     : <button type="button" onClick={onClick} className={cls} title={label}>{inner}</button>;
 }
 
-export default function Sidebar({ view, setView, onSignIn, onJoin, needsAttention, staleCount = 0, pendingCount = 0, collapsed: collapsedPref = false, onCollapse }) {
+export default function Sidebar({
+  view, setView, onSignIn, onJoin, needsAttention, staleCount = 0, pendingCount = 0, reportBadge = 0, overdueCount = 0, collapsed: collapsedPref = false, onCollapse,
+}) {
   const { profile, isAdmin, isPending, isDisabled, signOut, profileError, session } = useAuth();
   const MyIcon = profile?.facility_type ? typeOf(profile.facility_type).icon : Building2;
   const [open, setOpen] = useState(false);
@@ -67,18 +70,31 @@ export default function Sidebar({ view, setView, onSignIn, onJoin, needsAttentio
         )}
       </nav>
 
+      <div className={`mb-1.5 mt-5 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 ${collapsed ? 'invisible' : ''}`}>Decide</div>
+      <nav className="space-y-1">
+        <NavItem icon={Target} label="Priorities" active={view === 'priorities'} onClick={() => go('priorities')} collapsed={collapsed} />
+        <NavItem icon={Waves} label="Flood scenario" active={view === 'scenario'} onClick={() => go('scenario')} collapsed={collapsed} />
+        <NavItem icon={ChartNoAxesCombined} label="Analysis" active={view === 'analysis'} onClick={() => go('analysis')} collapsed={collapsed} />
+        <NavItem icon={Megaphone} label="Flood reports" active={view === 'reports'} onClick={() => go('reports')} collapsed={collapsed}
+          badge={reportBadge ? reportBadge : undefined} />
+        <NavItem icon={ListChecks} label="Action tracker" active={view === 'actions'} onClick={() => go('actions')} collapsed={collapsed}
+          badge={overdueCount ? overdueCount : undefined} />
+        <NavItem icon={FileText} label="District brief" active={view === 'brief'} onClick={() => go('brief')} collapsed={collapsed} />
+      </nav>
+
       {isAdmin && (
         <>
-          <div className={`mb-2 mt-6 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 ${collapsed ? 'invisible' : ''}`}>Admin</div>
+          <div className={`mb-1.5 mt-5 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 ${collapsed ? 'invisible' : ''}`}>Admin</div>
           <nav className="space-y-1">
             <NavItem icon={Building2} label="Manage facilities" active={view === 'admin-facilities'} onClick={() => go('admin-facilities')} collapsed={collapsed} />
             <NavItem icon={Users} label="User accounts" active={view === 'admin-users'} onClick={() => go('admin-users')} collapsed={collapsed}
               badge={pendingCount ? pendingCount : undefined} />
+            <NavItem icon={MapPinned} label="Boundaries" active={view === 'admin-boundaries'} onClick={() => go('admin-boundaries')} collapsed={collapsed} />
           </nav>
         </>
       )}
 
-      <div className={`mb-2 mt-6 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 ${collapsed ? 'invisible' : ''}`}>Resources</div>
+      <div className={`mb-1.5 mt-5 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500 ${collapsed ? 'invisible' : ''}`}>Resources</div>
       <nav className="space-y-1">
         <NavItem icon={FileDown} label="Download CSV" href={api.exportUrl} collapsed={collapsed} />
         <NavItem icon={BookOpen} label="How SPI works" active={view === 'about'} onClick={() => go('about')} collapsed={collapsed} />
@@ -86,7 +102,7 @@ export default function Sidebar({ view, setView, onSignIn, onJoin, needsAttentio
         <NavItem icon={LifeBuoy} label="Help center" active={view === 'help'} onClick={() => go('help')} collapsed={collapsed} />
       </nav>
 
-      <div className="mt-auto pt-6">
+      <div className="mt-auto shrink-0 pt-6">
         {isPending && collapsed && (
           <span className="mb-2 flex justify-center text-accent" title="Waiting for an administrator to activate your account"><Clock size={18} /></span>
         )}
@@ -143,12 +159,12 @@ export default function Sidebar({ view, setView, onSignIn, onJoin, needsAttentio
 
       {/* Mobile drawer */}
       {open && <div className="fixed inset-0 z-[2500] bg-black/50 md:hidden" onClick={() => setOpen(false)} />}
-      <aside className={`fixed inset-y-0 left-0 z-[2600] flex w-72 flex-col bg-ink p-4 transition-transform md:hidden ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-[2600] scroll-thin flex w-72 flex-col overflow-y-auto bg-ink p-4 transition-transform md:hidden ${open ? 'translate-x-0' : '-translate-x-full'}`}>
         {nav}
       </aside>
 
       {/* Desktop sidebar */}
-      <aside className={`hidden shrink-0 flex-col rounded-2xl bg-ink p-4 md:flex ${collapsed ? 'w-[76px]' : 'w-60'}`}>
+      <aside className={`scroll-thin hidden shrink-0 flex-col overflow-y-auto rounded-2xl bg-ink p-4 md:flex ${collapsed ? 'w-[76px]' : 'w-60'}`}>
         {nav}
       </aside>
     </>
