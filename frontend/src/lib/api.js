@@ -55,6 +55,7 @@ export const api = {
   updateCosts: (items) => request('/indicator-costs', { method: 'PATCH', body: { items } }),
   adminAreas: (level = 'district') => request(`/admin-areas?level=${level}`),
   adminAreasSummary: () => request('/admin-areas/summary'),
+  roads: (bbox, zoom) => request(`/roads?bbox=${bbox.map((n) => n.toFixed(4)).join(',')}&zoom=${zoom}`),
   uploadAdminAreas: (data) => request('/admin-areas', { method: 'POST', body: data }),
   deleteAdminAreas: (level) => request(`/admin-areas?level=${level}`, { method: 'DELETE' }),
   importStatus: () => request('/import/status'),

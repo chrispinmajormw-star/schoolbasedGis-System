@@ -231,6 +231,19 @@ app.get('/api/admin-areas', handle(async (req, res) => {
   res.json({ type: 'FeatureCollection', features: rows.map(feature) });
 }));
 
+// Roads inside the visible map area, simplified for the zoom level (the full network can be large).
+app.get('/api/roads', handle(async (req, res) => {
+  const bbox = String(req.query.bbox || '').split(',').map(Number);
+  const zoom = Number(req.query.zoom) || 0;
+  if (bbox.length !== 4 || bbox.some((n) => !Number.isFinite(n))) fail(400, 'bbox=minLon,minLat,maxLon,maxLat is required');
+  if (zoom < 8) return res.json({ type: 'FeatureCollection', features: [], zoomIn: true });
+  const tol = zoom >= 13 ? 0 : zoom >= 11 ? 0.0002 : zoom >= 10 ? 0.0006 : 0.0015;
+  const { rows } = await pool.query(
+    `SELECT id, name, road_class, ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, $5), 5)::json AS geometry
+       FROM roads WHERE geom && ST_MakeEnvelope($1, $2, $3, $4, 4326) LIMIT 20001`, [...bbox, tol]);
+  res.json({ type: 'FeatureCollection', features: rows.slice(0, 20000).map(feature), truncated: rows.length > 20000 });
+}));
+
 app.get('/api/admin-areas/summary', handle(async (_req, res) => {
   const { rows } = await pool.query(
     `SELECT level, COUNT(*)::int AS areas, SUM(population)::bigint AS population, MAX(source) AS source
