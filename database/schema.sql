@@ -1,12 +1,12 @@
 -- SafeCom (Safe Community): Mapping Community Safety & Resilience
 -- PostgreSQL / PostGIS schema for a FRESH install (Supabase SQL Editor or psql).
--- Existing databases: run the migrations (004, 005, then 006) instead. This file deletes all data.
+-- Existing databases: run the migrations (004, 005, 006, then 007) instead. This file deletes all data.
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 DROP VIEW IF EXISTS facility_status, school_status;
 DROP FUNCTION IF EXISTS compute_spi(jsonb, text);
 DROP FUNCTION IF EXISTS weights_for(text);
-DROP TABLE IF EXISTS actions, flood_reports, admin_areas, profiles, assessments, hazard_zones, indicator_weights, facilities, schools CASCADE;
+DROP TABLE IF EXISTS roads, actions, flood_reports, admin_areas, profiles, assessments, hazard_zones, indicator_weights, facilities, schools CASCADE;
 
 -- Community facilities -------------------------------------------------------
 CREATE TABLE facilities (
@@ -229,6 +229,16 @@ CREATE TABLE flood_reports (
 CREATE INDEX flood_reports_geom_idx ON flood_reports USING GIST (geom);
 CREATE INDEX flood_reports_status_idx ON flood_reports (status, observed_at DESC);
 
+-- Road network (uploaded by an administrator; used for automatic distance to road)
+CREATE TABLE roads (
+  id          SERIAL PRIMARY KEY,
+  name        TEXT,
+  road_class  TEXT,
+  source      TEXT,
+  geom        geometry(MultiLineString, 4326) NOT NULL
+);
+CREATE INDEX roads_geom_idx ON roads USING GIST (geom);
+
 -- 5. Action tracker --------------------------------------------------------------------
 CREATE TABLE actions (
   id           SERIAL PRIMARY KEY,
@@ -302,6 +312,7 @@ ALTER TABLE profiles          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admin_areas       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE flood_reports     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE actions           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE roads             ENABLE ROW LEVEL SECURITY;
 
 -- Make yourself the first admin: create the user in Supabase -> Authentication -> Users,
 -- then run (with your email):

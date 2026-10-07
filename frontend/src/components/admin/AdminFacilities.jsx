@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, Search, Pencil, ClipboardCheck, MapPin } from 'lucide-react';
 import { ClassPill, FloodPill } from '../ui.jsx';
 import { DeleteFacilityButton } from '../FacilityEditor.jsx';
@@ -11,6 +11,8 @@ export default function AdminFacilities({ facilities, onAdd, onEdit, onAssess, o
     const n = q.trim().toLowerCase();
     return (facilities?.features || []).filter((f) => !n || `${f.properties.name} ${f.properties.district} ${f.properties.code || ''}`.toLowerCase().includes(n));
   }, [facilities, q]);
+  const [limit, setLimit] = useState(200);
+  useEffect(() => setLimit(200), [q]);
 
   return (
     <div className="scroll-thin h-full overflow-y-auto p-4 sm:p-6">
@@ -40,7 +42,7 @@ export default function AdminFacilities({ facilities, onAdd, onEdit, onAssess, o
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {rows.map((f) => {
+            {rows.slice(0, limit).map((f) => {
               const p = f.properties;
               return (
                 <tr key={p.id} className="hover:bg-gray-50/60">
@@ -67,6 +69,11 @@ export default function AdminFacilities({ facilities, onAdd, onEdit, onAssess, o
             {facilities && rows.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">No facilities found.</td></tr>}
           </tbody>
         </table>
+        {rows.length > limit && (
+          <div className="border-t border-gray-100 p-3 text-center">
+            <button type="button" className="btn-ghost" onClick={() => setLimit((l) => l + 500)}>Show more ({(rows.length - limit).toLocaleString()} left)</button>
+          </div>
+        )}
       </div>
     </div>
   );

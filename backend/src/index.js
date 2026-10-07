@@ -33,7 +33,7 @@ const smallJson = express.json({ limit: '100kb' });
 const photoJson = express.json({ limit: '6mb' });
 const geoJson = express.json({ limit: '40mb' });
 app.use((req, res, next) => {
-  const parser = req.path === '/api/admin-areas' ? geoJson
+  const parser = req.path === '/api/admin-areas' || req.path.startsWith('/api/import/') ? geoJson
     : req.path.endsWith('/photo') || req.path === '/api/flood-reports' ? photoJson : smallJson;
   return parser(req, res, next);
 });
@@ -696,6 +696,186 @@ app.delete('/api/actions/:id', ...signedIn, handle(async (req, res) => {
   await assertActionAccess(req);
   await pool.query('DELETE FROM actions WHERE id = $1', [idParam(req)]);
   res.json({ ok: true });
+}));
+
+// ---------- bulk data import (admin) ----------
+// Facilities (points), flood hazard zones (polygons), roads (lines). The browser reads the shapefile / GeoJSON / CSV,
+// maps the fields and sends batches here.
+
+const TYPE_ALIASES = {
+  school: 'school', schools: 'school', primary: 'school', secondary: 'school',
+  evacuation_centre: 'evacuation_centre', 'evacuation centre': 'evacuation_centre', 'evacuation center': 'evacuation_centre', camp: 'evacuation_centre',
+  health_facility: 'health_facility', 'health facility': 'health_facility', hospital: 'health_facility', 'health centre': 'health_facility', clinic: 'health_facility',
+  market: 'market', place_of_worship: 'place_of_worship', 'place of worship': 'place_of_worship', church: 'place_of_worship', mosque: 'place_of_worship',
+  community_hall: 'community_hall', 'community hall': 'community_hall', water_point: 'water_point', 'water point': 'water_point', borehole: 'water_point',
+};
+const numOr = (v, d = null) => { const n = Number(v); return v === null || v === undefined || v === '' || !Number.isFinite(n) ? d : n; };
+const clip = (v, max) => { const t = v === null || v === undefined ? '' : String(v).trim(); return t ? t.slice(0, max) : null; };
+
+app.get('/api/import/status', ...adminOnly, handle(async (_req, res) => {
+  const { rows } = await pool.query(`
+    SELECT (SELECT COUNT(*) FROM facilities)::int AS facilities,
+           (SELECT COUNT(*) FROM facilities WHERE code LIKE 'SAMPLE-%')::int AS sample_facilities,
+           (SELECT COUNT(*) FROM hazard_zones)::int AS flood_zones,
+           (SELECT COUNT(*) FROM hazard_zones WHERE source = 'placeholder')::int AS sample_flood_zones,
+           (SELECT COUNT(*) FROM flood_reports WHERE reporter_name = 'Sample reporter')::int AS sample_flood_records,
+           (SELECT COUNT(*) FROM roads)::int AS roads,
+           (SELECT COUNT(*) FROM facilities WHERE dist_to_road_m IS NULL AND status = 'active')::int AS missing_road_distance,
+           (SELECT string_agg(p.email, ', ') FROM profiles p JOIN facilities f ON f.id = p.facility_id WHERE f.code LIKE 'SAMPLE-%') AS linked_accounts,
+           (SELECT json_object_agg(facility_type, n) FROM (SELECT facility_type, COUNT(*)::int AS n FROM facilities GROUP BY 1) t) AS by_type`);
+  res.json(rows[0]);
+}));
+
+// Remove the fictional sample data from seed.sql (same as database/remove_sample_data.sql)
+app.delete('/api/import/sample', ...adminOnly, handle(async (_req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const linked = await client.query(
+      `SELECT string_agg(p.email, ', ') AS emails FROM profiles p JOIN facilities f ON f.id = p.facility_id WHERE f.code LIKE 'SAMPLE-%'`);
+    if (linked.rows[0].emails) fail(409, `These accounts are linked to sample facilities. Delete or reassign them first (User accounts): ${linked.rows[0].emails}`);
+    const r1 = await client.query(`DELETE FROM flood_reports WHERE reporter_name = 'Sample reporter'`);
+    const r2 = await client.query(`DELETE FROM hazard_zones WHERE source = 'placeholder'`);
+    const r3 = await client.query(`DELETE FROM facilities WHERE code LIKE 'SAMPLE-%'`);
+    await client.query('COMMIT');
+    res.json({ facilities: r3.rowCount, flood_zones: r2.rowCount, flood_records: r1.rowCount });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}));
+
+// Facilities: insert, or update when the code already exists. District can come from district boundaries.
+app.post('/api/import/facilities', ...adminOnly, handle(async (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items : fail(400, 'Nothing to import');
+  if (items.length > 2000) fail(400, 'Send at most 2000 facilities per batch');
+  const autoDistrict = !!req.body.auto_district;
+  let inserted = 0; let updated = 0; const skipped = [];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const [i, it] of items.entries()) {
+      const row = it.row ?? i + 1;
+      const type = TYPE_ALIASES[String(it.facility_type || '').trim().toLowerCase()] || (FACILITY_TYPES.includes(it.facility_type) ? it.facility_type : null);
+      const name = clip(it.name, 200);
+      const lat = numOr(it.lat); const lon = numOr(it.lon);
+      if (!type) { skipped.push({ row, reason: `Unknown facility type "${it.facility_type ?? ''}"` }); continue; }
+      if (!name) { skipped.push({ row, reason: 'No name' }); continue; }
+      if (lat === null || lon === null || lat < MALAWI.minLat || lat > MALAWI.maxLat || lon < MALAWI.minLon || lon > MALAWI.maxLon) {
+        skipped.push({ row, reason: 'Location missing or outside Malawi' }); continue;
+      }
+      let district = clip(it.district, 80);
+      if (!district && autoDistrict) {
+        const d = await client.query(
+          `SELECT name FROM admin_areas WHERE level = 'district' AND ST_Intersects(geom, ST_SetSRID(ST_MakePoint($1,$2),4326)) LIMIT 1`, [lon, lat]);
+        district = d.rows[0]?.name || null;
+      }
+      if (!district) { skipped.push({ row, reason: 'No district (add a district field, or upload district boundaries first)' }); continue; }
+      const vals = [type, name, clip(it.code, 40), district, clip(it.subtype, 80),
+        Math.max(0, Math.round(numOr(it.people_served, 0))), Math.max(0, Math.round(numOr(it.staff, 0))),
+        numOr(it.shelter_capacity) === null ? null : Math.max(0, Math.round(numOr(it.shelter_capacity))), lon, lat,
+        clip(it.contact_name, 120), clip(it.contact_phone, 40)];
+      await client.query('SAVEPOINT r');
+      try {
+        const r = await client.query(
+          `INSERT INTO facilities (facility_type, name, code, district, subtype, people_served, staff, shelter_capacity, geom, contact_name, contact_phone)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8, ST_SetSRID(ST_MakePoint($9,$10),4326), $11, $12)
+           ON CONFLICT (code) DO UPDATE SET facility_type = EXCLUDED.facility_type, name = EXCLUDED.name, district = EXCLUDED.district,
+             subtype = COALESCE(EXCLUDED.subtype, facilities.subtype),
+             people_served = CASE WHEN EXCLUDED.people_served > 0 THEN EXCLUDED.people_served ELSE facilities.people_served END,
+             staff = CASE WHEN EXCLUDED.staff > 0 THEN EXCLUDED.staff ELSE facilities.staff END,
+             shelter_capacity = COALESCE(EXCLUDED.shelter_capacity, facilities.shelter_capacity),
+             contact_name = COALESCE(EXCLUDED.contact_name, facilities.contact_name),
+             contact_phone = COALESCE(EXCLUDED.contact_phone, facilities.contact_phone),
+             geom = EXCLUDED.geom
+           RETURNING (xmax = 0) AS fresh`, vals);
+        if (r.rows[0].fresh) inserted += 1; else updated += 1;
+        await client.query('RELEASE SAVEPOINT r');
+      } catch (e) {
+        await client.query('ROLLBACK TO SAVEPOINT r');
+        skipped.push({ row, reason: e.message.slice(0, 120) });
+      }
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+  res.json({ inserted, updated, skipped });
+}));
+
+// Polygons / lines in batches. "first: true" on the first batch replaces what was there before (when replace is chosen).
+async function importShapes(req, res, { table, geomType, columns, values, clear }) {
+  const b = req.body || {};
+  const items = Array.isArray(b.features) ? b.features : fail(400, 'Nothing to import');
+  const source = clip(b.source, 200);
+  const valid = items.map((it) => {
+    const g = it.geometry;
+    const ok = geomType === 3 ? ['Polygon', 'MultiPolygon'].includes(g?.type) : ['LineString', 'MultiLineString'].includes(g?.type);
+    return ok ? { g, v: values(it) } : null;
+  }).filter((x) => x?.v);
+  // Never wipe the existing layer with a file that has nothing usable in it
+  if (b.first && !valid.length) fail(400, 'Nothing usable in this file: check the geometry type and the field mapping. Existing data was not changed.');
+  let imported = 0; const skipped = items.length - valid.length;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    if (b.first && b.replace !== false) await client.query(clear);
+    for (const { g, v } of valid) {
+      await client.query(
+        `INSERT INTO ${table} (${columns.join(', ')}, source, geom)
+         VALUES (${columns.map((_, i) => `$${i + 1}`).join(', ')}, $${columns.length + 1},
+                 ST_Multi(ST_CollectionExtract(ST_MakeValid(ST_SetSRID(ST_Force2D(ST_GeomFromGeoJSON($${columns.length + 2})), 4326)), ${geomType})))`,
+        [...v, source, JSON.stringify(g)]);
+      imported += 1;
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+  res.status(201).json({ imported, skipped });
+}
+
+const LEVELS = { 1: 1, 2: 2, 3: 3, low: 1, medium: 2, moderate: 2, high: 3, 'very high': 3 };
+app.post('/api/import/flood-zones', ...adminOnly, handle(async (req, res) => importShapes(req, res, {
+  table: 'hazard_zones', geomType: 3, columns: ['hazard', 'level', 'name'],
+  clear: `DELETE FROM hazard_zones WHERE hazard = 'flood'`,
+  values: (it) => {
+    const level = LEVELS[String(it.level ?? '').trim().toLowerCase()];
+    return level ? ['flood', level, clip(it.name, 200)] : null;
+  },
+})));
+
+app.post('/api/import/roads', ...adminOnly, handle(async (req, res) => importShapes(req, res, {
+  table: 'roads', geomType: 2, columns: ['name', 'road_class'], clear: 'DELETE FROM roads',
+  values: (it) => [clip(it.name, 200), clip(it.road_class, 60)],
+})));
+
+app.delete('/api/import/roads', ...adminOnly, handle(async (_req, res) => {
+  const { rowCount } = await pool.query('DELETE FROM roads');
+  res.json({ deleted: rowCount });
+}));
+
+// Distance from every facility to the nearest road and nearest health facility (metres, on the ellipsoid).
+app.post('/api/import/distances', ...adminOnly, handle(async (_req, res) => {
+  const roads = await pool.query(`
+    UPDATE facilities f SET dist_to_road_m = ROUND((
+      SELECT ST_Distance(f.geom::geography, r.geom::geography) FROM roads r ORDER BY r.geom <-> f.geom LIMIT 1)::numeric)
+    WHERE EXISTS (SELECT 1 FROM roads)`);
+  const health = await pool.query(`
+    UPDATE facilities f SET dist_to_health_m = CASE WHEN f.facility_type = 'health_facility' THEN 0 ELSE ROUND((
+      SELECT ST_Distance(f.geom::geography, h.geom::geography) FROM facilities h
+       WHERE h.facility_type = 'health_facility' AND h.status = 'active' AND h.id <> f.id
+       ORDER BY h.geom <-> f.geom LIMIT 1)::numeric) END
+    WHERE EXISTS (SELECT 1 FROM facilities WHERE facility_type = 'health_facility' AND status = 'active')`);
+  res.json({ road: roads.rowCount, health: health.rowCount });
 }));
 
 // ---------- admin ----------

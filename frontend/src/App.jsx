@@ -26,7 +26,7 @@ import FloodHistory from './components/FloodHistory.jsx';
 import RecordFlood from './components/RecordFlood.jsx';
 import Actions, { isOverdue } from './components/Actions.jsx';
 import DistrictBrief from './components/DistrictBrief.jsx';
-import AdminBoundaries from './components/admin/AdminBoundaries.jsx';
+import AdminData from './components/admin/AdminData.jsx';
 import { facilityFloodHistory, maxPeopleByType } from './lib/decision.js';
 import { loadPrefs, savePrefs } from './lib/prefs.js';
 
@@ -216,7 +216,7 @@ export default function App() {
             onAssess={assess} onSignIn={() => setAuthOpen('signin')} />
         )}
         {view === 'brief' && <DistrictBrief facilities={facilities} checklists={checklists} answers={answers} actions={actions} history={floodHistory} hazards={hazards} records={reports} />}
-        {view === 'admin-boundaries' && isAdmin && <AdminBoundaries onChanged={() => { loadAreas(); load(); }} />}
+        {view === 'admin-data' && isAdmin && <AdminData onChanged={() => { loadAreas(); load(); }} />}
         {view === 'about' && <About checklists={checklists} />}
         {view === 'settings' && <Settings prefs={prefs} setPrefs={setPrefs} />}
         {view === 'help' && <HelpCenter go={setView} onJoin={() => setAuthOpen('register')} />}

@@ -2,7 +2,8 @@ import { createElement, useEffect, useMemo, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import L from 'leaflet';
-import { MapContainer, TileLayer, GeoJSON, Marker, Tooltip, ZoomControl, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, Marker, Tooltip, ZoomControl } from 'react-leaflet';
+import FacilityMarkers from './FacilityMarkers.jsx';
 import { Layers, LocateFixed, PanelLeftOpen } from 'lucide-react';
 import { CLASS_STYLE, FLOOD_STYLE, rpsColor, classify, fmtDate } from '../lib/api.js';
 import { DEPTH } from '../lib/decision.js';
@@ -44,16 +45,6 @@ function reportIcon(depth) {
   });
 }
 
-function FlyTo({ target }) {
-  const map = useMap();
-  useEffect(() => {
-    if (!target) return;
-    const [lon, lat] = target.geometry.coordinates;
-    map.flyTo([lat, lon], Math.max(map.getZoom(), 9), { duration: 0.8 });
-  }, [target, map]);
-  return null;
-}
-
 export default function MapView({
   facilities, hazards, selected, onSelect, layers, setLayers, initialBase = 'standard', onShowList, allFacilities, onPick,
   reports, floodHistory, districtAreas,
@@ -61,8 +52,6 @@ export default function MapView({
   const [base, setBase] = useState(BASEMAPS[initialBase] ? initialBase : 'standard');
   const [showLayers, setShowLayers] = useState(false);
   const [map, setMap] = useState(null);
-  const selectedFeature = useMemo(
-    () => facilities?.features.find((f) => f.properties.id === selected) || null, [facilities, selected]);
   const toggle = (k) => setLayers((l) => ({ ...l, [k]: !(l[k] ?? DEFAULT_ON[k]) }));
   const showReports = layers.reports ?? DEFAULT_ON.reports;
   const showDistricts = (layers.districts ?? DEFAULT_ON.districts) && districtAreas?.features?.length > 0;
@@ -108,24 +97,10 @@ export default function MapView({
           />
         )}
 
-        {layers.facilities && facilities?.features.map((f) => {
-          const p = f.properties;
-          const [lon, lat] = f.geometry.coordinates;
-          const color = layers.mode === 'risk' ? rpsColor(p.rps) : CLASS_STYLE[p.spi_class].color;
-          const on = p.id === selected;
-          const flooded = floodHistory?.get(p.id);
-          return (
-            <Marker key={`${p.id}-${on}-${color}-${layers.learnersSize}-${p.facility_type}`} position={[lat, lon]}
-              icon={pinIcon(p.facility_type, color, size(p.people_served, layers.learnersSize), on)}
-              zIndexOffset={on ? 1000 : 0}
-              eventHandlers={{ click: () => onSelect(p.id) }}>
-              <Tooltip direction="top" offset={[0, -14]}>
-                <b>{p.name}</b><br />{typeOf(p.facility_type).label} · {p.spi === null ? 'Not assessed' : `SPI ${Math.round(p.spi)}%`}
-                {flooded && <><br /><span style={{ color: '#c2410c' }}>Flooded before · last {fmtDate(flooded.last)}</span></>}
-              </Tooltip>
-            </Marker>
-          );
-        })}
+        {layers.facilities && (
+          <FacilityMarkers features={facilities?.features} selected={selected} onSelect={onSelect} mode={layers.mode}
+            sizeBy={layers.learnersSize} pinIcon={pinIcon} size={size} floodHistory={floodHistory} />
+        )}
 
         {showReports && pastFloods.map((r) => {
           const p = r.properties;
@@ -138,7 +113,6 @@ export default function MapView({
             </Marker>
           );
         })}
-        <FlyTo target={selectedFeature} />
       </MapContainer>
 
       {/* Top-left: show the facilities list again */}
@@ -202,6 +176,9 @@ export default function MapView({
               <div key={l} className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: rpsColor(v) }} />{l}</div>))}
           {layers.flood && (
             <div className="flex items-center gap-2 pt-1"><span className="h-2.5 w-4 rounded-sm border border-dashed border-blue-600 bg-blue-200" />Flood zone</div>
+          )}
+          {(facilities?.features.length || 0) > 400 && (
+            <div className="flex items-center gap-2 pt-1"><span className="h-3 w-3 rounded-full border-2 border-red-500 bg-ink" />Group: ring shows the mix</div>
           )}
           {showReports && pastFloods.length > 0 && (
             <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-blue-700 ring-2 ring-white" />Past flood (recorded)</div>

@@ -92,3 +92,15 @@ body { @apply bg-canvas font-sans text-[13px] text-gray-900 antialiased; }
   @page { size: A4; margin: 14mm; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* Facility clusters: count in a dark disc, ring split by preparedness class */
+.fac-cluster { background: none; border: none; }
+.fac-cluster > div {
+  display: grid; place-items: center; width: 100%; height: 100%; border-radius: 9999px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25); padding: 4px;
+}
+.fac-cluster span {
+  display: grid; place-items: center; width: 100%; height: 100%; border-radius: 9999px;
+  background: #0f0f10; color: #fff; font-weight: 700; font-size: 12px;
+}
+.fac-cluster:hover > div { transform: scale(1.06); }

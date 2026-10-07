@@ -1,6 +1,6 @@
 import {
   Map, LayoutDashboard, Building2, Users, FileDown, BookOpen, LogOut, LogIn, ChevronsLeft, ChevronsRight, ShieldCheck, Menu, X, UserPlus, Clock, Settings, LifeBuoy,
-  Target, Waves, ChartNoAxesCombined, History, ListChecks, FileText, MapPinned,
+  Target, Waves, ChartNoAxesCombined, History, ListChecks, FileText, DatabaseZap,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../lib/auth.jsx';
@@ -89,7 +89,7 @@ export default function Sidebar({
             <NavItem icon={Building2} label="Manage facilities" active={view === 'admin-facilities'} onClick={() => go('admin-facilities')} collapsed={collapsed} />
             <NavItem icon={Users} label="User accounts" active={view === 'admin-users'} onClick={() => go('admin-users')} collapsed={collapsed}
               badge={pendingCount ? pendingCount : undefined} />
-            <NavItem icon={MapPinned} label="Boundaries" active={view === 'admin-boundaries'} onClick={() => go('admin-boundaries')} collapsed={collapsed} />
+            <NavItem icon={DatabaseZap} label="Data import" active={view === 'admin-data'} onClick={() => go('admin-data')} collapsed={collapsed} />
           </nav>
         </>
       )}

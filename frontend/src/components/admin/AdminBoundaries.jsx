@@ -4,25 +4,14 @@ import { api } from '../../lib/api.js';
 import { useFeedback } from '../../lib/feedback.jsx';
 import { DISTRICTS } from '../../lib/facilityTypes.js';
 import { PageHeader, Seg, Field, ErrorNote } from '../ui.jsx';
+import { readFile } from '../../lib/importFiles.js';
 
 const LEVELS = { district: 'Districts', ta: 'Traditional Authorities' };
 
 // Guess which attribute holds the name / district / population
 const guess = (keys, patterns) => keys.find((k) => patterns.some((p) => p.test(k))) || '';
 
-async function readFile(file) {
-  const name = file.name.toLowerCase();
-  if (name.endsWith('.zip')) {
-    const { default: shp } = await import('shpjs');
-    const out = await shp(await file.arrayBuffer());
-    const fc = Array.isArray(out) ? { type: 'FeatureCollection', features: out.flatMap((x) => x.features) } : out;
-    return fc;
-  }
-  if (name.endsWith('.geojson') || name.endsWith('.json')) return JSON.parse(await file.text());
-  throw new Error('Upload a zipped shapefile (.zip with .shp, .dbf, .prj) or a GeoJSON file.');
-}
-
-export default function AdminBoundaries({ onChanged }) {
+export default function AdminBoundaries({ onChanged, embedded = false }) {
   const { toast, confirm } = useFeedback();
   const [summary, setSummary] = useState(null);
   const [level, setLevel] = useState('district');
@@ -49,8 +38,10 @@ export default function AdminBoundaries({ onChanged }) {
     if (!file) return;
     setError(''); setFc(null); setBusy(true);
     try {
-      const data = await readFile(file);
-      if (!data?.features?.length) throw new Error('No features found in that file.');
+      const { features, table } = await readFile(file);
+      if (table) throw new Error('Boundaries need polygons: upload a zipped shapefile or GeoJSON, not a CSV.');
+      const data = { type: 'FeatureCollection', features };
+      if (!data.features?.length) throw new Error('No features found in that file.');
       const ks = Object.keys(data.features[0].properties || {});
       setFc(data); setFileName(file.name); setSource(file.name.replace(/\.(zip|geojson|json)$/i, ''));
       setMap({
@@ -83,8 +74,8 @@ export default function AdminBoundaries({ onChanged }) {
   }
 
   return (
-    <div className="scroll-thin h-full overflow-y-auto p-4 sm:p-6">
-      <PageHeader title="Boundaries" subtitle="Upload district and Traditional Authority boundaries. Districts shade the analysis maps; TAs are attached to every facility automatically." />
+    <div className={embedded ? '' : 'scroll-thin h-full overflow-y-auto p-4 sm:p-6'}>
+      {!embedded && <PageHeader title="Boundaries" subtitle="Upload district and Traditional Authority boundaries. Districts shade the analysis maps; TAs are attached to every facility automatically." />}
       <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
         <section className="card p-5">
           <h2 className="mb-3 font-semibold">Upload a layer</h2>

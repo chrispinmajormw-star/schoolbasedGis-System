@@ -153,7 +153,7 @@ export default function FloodHistory({ records, facilities, hazards, history, on
       </div>
 
       <div className="relative order-1 h-[45vh] shrink-0 lg:order-2 lg:h-auto lg:flex-1">
-        <MapContainer center={[-15.2, 34.9]} zoom={7} minZoom={5} zoomControl={false} className="h-full w-full">
+        <MapContainer preferCanvas center={[-15.2, 34.9]} zoom={7} minZoom={5} zoomControl={false} className="h-full w-full">
           <TileLayer url={BASEMAPS.standard.url} attribution={BASEMAPS.standard.attribution} maxZoom={BASEMAPS.standard.maxZoom} />
           <ZoomControl position="bottomright" />
           {hazards && <GeoJSON key={`hz-${hazards.features.length}`} data={hazards} style={{ color: '#1d4ed8', weight: 1, dashArray: '4 4', fillColor: '#3b82f6', fillOpacity: 0.12 }} />}

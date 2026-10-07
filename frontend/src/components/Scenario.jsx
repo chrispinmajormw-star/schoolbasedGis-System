@@ -271,7 +271,7 @@ export default function Scenario({ facilities, hazards, reports, onPick }) {
 
       {/* Map */}
       <div className="relative order-1 h-[50vh] shrink-0 lg:order-2 lg:h-auto lg:flex-1">
-        <MapContainer center={MALAWI_CENTER} zoom={6} minZoom={5} zoomControl={false} className="h-full w-full">
+        <MapContainer preferCanvas center={MALAWI_CENTER} zoom={6} minZoom={5} zoomControl={false} className="h-full w-full">
           <TileLayer url={BASEMAPS.standard.url} attribution={BASEMAPS.standard.attribution} maxZoom={BASEMAPS.standard.maxZoom} />
           <ZoomControl position="bottomright" />
           <Clicks onClick={mapClick} drawing={(source === 'draw' && !drawDone) || source === 'point'} />

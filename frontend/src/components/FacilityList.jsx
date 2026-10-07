@@ -33,16 +33,22 @@ export default function FacilityList({ facilities, typeFilter, setTypeFilter, se
   const [floodOnly, setFloodOnly] = useState(false);
   const [sort, setSort] = useState('name');
   const listRef = useRef(null);
+  const moreRef = useRef(null);
+  const [limit, setLimit] = useState(100);
   const [, tick] = useState(0);
 
   // Keep the "updated x ago" label fresh
   useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 15000); return () => clearInterval(t); }, []);
 
-  // When a facility is picked on the map, bring its card into view
+  // Large lists render 100 cards at a time; more load as you scroll
+  useEffect(() => { setLimit(100); }, [q, tab, floodOnly, sort, typeFilter]);
   useEffect(() => {
-    if (!selectedId) return;
-    listRef.current?.querySelector(`[data-facility="${selectedId}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [selectedId]);
+    const el = moreRef.current;
+    if (!el) return undefined;
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) setLimit((l) => l + 200); }, { root: listRef.current, rootMargin: '400px' });
+    io.observe(el);
+    return () => io.disconnect();
+  });
 
   const all = useMemo(() => facilities?.features.map((f) => f.properties) || [], [facilities]);
   const counts = useMemo(() => all.reduce((c, p) => ({ ...c, [p.facility_type]: (c[p.facility_type] || 0) + 1 }), {}), [all]);
@@ -58,6 +64,14 @@ export default function FacilityList({ facilities, typeFilter, setTypeFilter, se
       .filter((p) => !needle || `${p.name} ${p.district} ${p.code || ''} ${typeOf(p.facility_type).label}`.toLowerCase().includes(needle))
       .sort((a, b) => (sort === 'risk' ? (b.rps ?? -1) - (a.rps ?? -1) : a.name.localeCompare(b.name)));
   }, [all, q, tab, floodOnly, sort, typeFilter]);
+
+  // When a facility is picked on the map, make sure its card is rendered, then bring it into view
+  useEffect(() => {
+    if (!selectedId) return;
+    const i = list.findIndex((p) => p.id === selectedId);
+    if (i >= limit) { setLimit(i + 50); return; }
+    listRef.current?.querySelector(`[data-facility="${selectedId}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [selectedId, list, limit]);
 
   const chip = (key, label, Icon, n) => (
     <button key={key} type="button" onClick={() => setTypeFilter(key)} title={label}
@@ -127,7 +141,7 @@ export default function FacilityList({ facilities, typeFilter, setTypeFilter, se
             {filtered && <button type="button" onClick={clear} className="btn-ghost mt-3">Clear filters</button>}
           </div>
         )}
-        {list.map((p) => {
+        {list.slice(0, limit).map((p) => {
           const on = p.id === selectedId;
           const mine = profile?.facility_id === p.id;
           const T = typeOf(p.facility_type);
@@ -152,6 +166,7 @@ export default function FacilityList({ facilities, typeFilter, setTypeFilter, se
             </button>
           );
         })}
+        {list.length > limit && <div ref={moreRef} className="py-3 text-center text-[11px] text-gray-400">Loading more… ({(list.length - limit).toLocaleString()} left)</div>}
       </div>
 
       <div className="border-t border-gray-100 p-4">

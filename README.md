@@ -25,6 +25,11 @@ psql "$DATABASE_URL" -f database/seed.sql      # fictional sample data
 2. `migration_005_decisions.sql`: decision support — unit costs, shelter capacity, district/TA boundaries,
    flood records and the action tracker.
 3. `migration_006_flood_history.sql`: flood records become flood history (event name, flooded facility).
+4. `migration_007_roads.sql`: road network layer for automatic distance to road.
+
+**Loading your own data:** sign in as an administrator → **Data import**, and work through the tabs:
+remove sample data → boundaries → flood zones → facilities → roads. Shapefiles (zipped with their .prj), GeoJSON
+and CSV (facilities) are accepted. `database/remove_sample_data.sql` removes the sample data from the SQL Editor instead.
 
 SafeCom is a preparedness and planning tool, **not an early warning system**: it does not forecast or send warnings
 (official warnings come from DCCMS and DoDMA).

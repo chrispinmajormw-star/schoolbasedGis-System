@@ -141,7 +141,7 @@ RPS = 100 × H × V × E × A / 1.5
 - **Facility layer:** points showing a type icon, ringed by SPI class colour (or by RPS), optionally sized by people served. Users can filter by type, class and flood-zone status.
 - **Hazard layer:** flood hazard zones shaded by level 1–3.
 - **Overlay logic:** hazard level is attached to each facility with a PostGIS `ST_Intersects` point-in-polygon test, recalculated whenever a facility moves.
-- **Accessibility:** distance to the nearest road and nearest health facility is stored per facility. It currently comes from QGIS nearest-neighbour analysis. A planned extension calculates both automatically in PostGIS from imported national road and health facility layers.
+- **Accessibility:** distance from each facility to the nearest road (imported road network, optionally excluding tracks and footpaths) and to the nearest health facility (the health facilities in SafeCom) is calculated in PostGIS as the geodesic distance (`ST_Distance` on geography, nearest candidate found with a KNN index search). It is recalculated after every import of facilities or roads.
 - **Administrative units:** administrators upload district and Traditional Authority polygons (zipped shapefile in any projection with a `.prj`, or GeoJSON). Each facility's TA is assigned automatically with a point-in-polygon join in the `facility_status` view, and district polygons are shaded by mean SPI.
 - **Basemaps:** OpenStreetMap standard and Humanitarian (HOT) styles. No commercial keys are required.
 - **Descriptive outputs** (decision-support methods are in Section 10):

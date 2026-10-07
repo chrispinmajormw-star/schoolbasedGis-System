@@ -56,7 +56,7 @@ function Districts({ facilities, districtAreas, history }) {
           {!hasPolygons && <span className="text-[11px] text-gray-400">Circles: no district boundaries uploaded yet</span>}
         </div>
         <div className="h-[480px]">
-          <MapContainer center={MALAWI_CENTER} zoom={6} minZoom={5} zoomControl={false} className="h-full w-full">
+          <MapContainer preferCanvas center={MALAWI_CENTER} zoom={6} minZoom={5} zoomControl={false} className="h-full w-full">
             <TileLayer url={BASEMAPS.standard.url} attribution={BASEMAPS.standard.attribution} maxZoom={BASEMAPS.standard.maxZoom} opacity={0.6} />
             <ZoomControl position="bottomright" />
             {hasPolygons ? (
@@ -187,7 +187,7 @@ function Hotspots({ facilities, onPick }) {
           <span className="text-[11px] text-gray-400">{pts.length} assessed facilities</span>
         </div>
         <div className="relative h-[480px]">
-          <MapContainer center={MALAWI_CENTER} zoom={6} minZoom={5} zoomControl={false} className="h-full w-full">
+          <MapContainer preferCanvas center={MALAWI_CENTER} zoom={6} minZoom={5} zoomControl={false} className="h-full w-full">
             <TileLayer url={BASEMAPS.standard.url} attribution={BASEMAPS.standard.attribution} maxZoom={BASEMAPS.standard.maxZoom} opacity={0.6} />
             <ZoomControl position="bottomright" />
             {res.map((r) => (
@@ -236,7 +236,7 @@ export default function Analysis({ facilities, checklists, answers, districtArea
         : tab === 'districts' ? <Districts facilities={facilities} districtAreas={districtAreas} history={history} />
           : tab === 'gaps' ? (answers && checklists ? <GapHeatmap facilities={facilities} checklists={checklists} answers={answers} /> : <div className="h-96 animate-pulse rounded-2xl bg-gray-100" />)
             : <Hotspots facilities={facilities} onPick={onPick} />}
-      <p className="mt-4 flex items-center gap-1.5 text-[11px] text-gray-400"><MapIcon size={12} />Upload district and TA boundaries under Admin → Boundaries to shade real district shapes.</p>
+      <p className="mt-4 flex items-center gap-1.5 text-[11px] text-gray-400"><MapIcon size={12} />Upload district and TA boundaries under Admin → Data import → Boundaries to shade real district shapes.</p>
     </div>
   );
 }
