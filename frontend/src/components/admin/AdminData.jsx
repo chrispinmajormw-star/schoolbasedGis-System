@@ -5,7 +5,8 @@ import {
 import { api } from '../../lib/api.js';
 import { useFeedback } from '../../lib/feedback.jsx';
 import { FACILITY_TYPES, TYPE_KEYS } from '../../lib/facilityTypes.js';
-import { readFile, fieldsOf, guessField, pointOf, inBatches, distinctValues } from '../../lib/importFiles.js';
+import { readLayers, fieldsOf, guessField, pointOf, inBatches, distinctValues } from '../../lib/importFiles.js';
+import LayerPicker from './LayerPicker.jsx';
 import { downloadCsv } from '../../lib/decision.js';
 import { PageHeader, Seg, Field, ErrorNote } from '../ui.jsx';
 import AdminBoundaries from './AdminBoundaries.jsx';
@@ -63,17 +64,22 @@ function Progress({ done, total, label }) {
   );
 }
 
-function useFile() {
-  const [state, setState] = useState({ features: null, table: false, fileName: '', busy: false, error: '' });
+const EMPTY = { layers: null, idx: 0, table: false, fileName: '', busy: false, error: '' };
+
+// Reads a file; a zip with several shapefiles gives several layers, and the one matching `prefer` is chosen first.
+function useFile(prefer) {
+  const [state, setState] = useState(EMPTY);
   const load = async (file) => {
-    setState({ features: null, table: false, fileName: file.name, busy: true, error: '' });
+    setState({ ...EMPTY, fileName: file.name, busy: true });
     try {
-      const { features, table } = await readFile(file);
-      if (!features?.length) throw new Error('No records found in that file.');
-      setState({ features, table, fileName: file.name, busy: false, error: '' });
-    } catch (e) { setState({ features: null, table: false, fileName: file.name, busy: false, error: e.message || 'Could not read that file' }); }
+      const { layers, table } = await readLayers(file);
+      if (!layers?.length || !layers.some((l) => l.features.length)) throw new Error('No records found in that file.');
+      const idx = Math.max(0, layers.findIndex((l) => l.kind === prefer));
+      setState({ ...EMPTY, layers, idx, table, fileName: file.name });
+    } catch (e) { setState({ ...EMPTY, fileName: file.name, error: e.message || 'Could not read that file' }); }
   };
-  return [state, load, () => setState({ features: null, table: false, fileName: '', busy: false, error: '' })];
+  const features = state.layers?.[state.idx]?.features || null;
+  return [{ ...state, features }, load, () => setState(EMPTY), (idx) => setState((x) => ({ ...x, idx }))];
 }
 
 // ---------- facilities (points) ----------
@@ -88,7 +94,7 @@ const guessType = (v) => ALIAS[String(v).trim().toLowerCase()] || TYPE_KEYS.find
 
 function ImportFacilities({ status, areas, onDone }) {
   const { toast } = useFeedback();
-  const [file, load, reset] = useFile();
+  const [file, load, reset, pickLayer] = useFile('point');
   const keys = useMemo(() => fieldsOf(file.features), [file.features]);
   const [typeMode, setTypeMode] = useState('fixed');
   const [fixedType, setFixedType] = useState('school');
@@ -142,7 +148,7 @@ function ImportFacilities({ status, areas, onDone }) {
       lon: pt?.[0] ?? null, lat: pt?.[1] ?? null,
     };
   }), [file, m, typeMode, fixedType, typeField, typeMap, autoDistrict]);
-  const notPoints = !file.table && file.features && !file.features.some((f) => pointOf(f.geometry));
+  const notPoints = !file.table && file.features && !file.features.some((f) => pointOf(f?.geometry));
 
   async function run() {
     setError(''); setResult(null);
@@ -172,6 +178,7 @@ function ImportFacilities({ status, areas, onDone }) {
       </div>
       <FilePick label="Choose a points file" hint="Zipped shapefile (.zip) · GeoJSON · CSV with latitude and longitude columns" busy={file.busy} fileName={file.fileName} onFile={load} />
       <ErrorNote>{file.error}</ErrorNote>
+      <LayerPicker layers={file.layers} value={file.idx} onChange={pickLayer} />
       {notPoints && <ErrorNote>This file has no point geometry. Use the Flood zones, Roads or Boundaries tab for polygons and lines.</ErrorNote>}
 
       {file.features && !notPoints && (
@@ -266,7 +273,7 @@ const LEVEL_GUESS = (v) => {
 function ImportShapes({ kind, status, onDone }) {
   const { toast, confirm } = useFeedback();
   const zones = kind === 'zones';
-  const [file, load, reset] = useFile();
+  const [file, load, reset, pickLayer] = useFile(kind === 'zones' ? 'polygon' : 'line');
   const keys = useMemo(() => fieldsOf(file.features), [file.features]);
   const [levelMode, setLevelMode] = useState('field');
   const [levelField, setLevelField] = useState('');
@@ -282,7 +289,7 @@ function ImportShapes({ kind, status, onDone }) {
   const [busy, setBusy] = useState(false);
 
   const wanted = zones ? ['Polygon', 'MultiPolygon'] : ['LineString', 'MultiLineString'];
-  const shapes = useMemo(() => (file.features || []).filter((f) => wanted.includes(f.geometry?.type)), [file.features]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shapes = useMemo(() => (file.features || []).filter((f) => wanted.includes(f?.geometry?.type)), [file.features]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!file.features) return;
@@ -343,6 +350,7 @@ function ImportShapes({ kind, status, onDone }) {
       </div>
       <FilePick label={`Choose a ${zones ? 'polygon' : 'line'} file`} hint="Zipped shapefile (.zip with .shp, .shx, .dbf, .prj) or GeoJSON" busy={file.busy} fileName={file.fileName} onFile={load} accept=".zip,.geojson,.json" />
       <ErrorNote>{file.error}</ErrorNote>
+      <LayerPicker layers={file.layers} value={file.idx} onChange={pickLayer} />
       {file.features && !shapes.length && <ErrorNote>{`No ${zones ? 'polygons' : 'lines'} in this file.`}</ErrorNote>}
 
       {shapes.length > 0 && (

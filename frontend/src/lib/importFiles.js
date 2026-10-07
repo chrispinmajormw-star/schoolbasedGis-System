@@ -26,18 +26,65 @@ function parseCsv(text) {
   return body.map((r) => Object.fromEntries(keys.map((k, i) => [k, (r[i] ?? '').trim()])));
 }
 
+/** 'point' | 'line' | 'polygon' | null */
+export function geomKind(g) {
+  if (!g) return null;
+  if (g.type === 'Point' || g.type === 'MultiPoint') return 'point';
+  if (g.type === 'LineString' || g.type === 'MultiLineString') return 'line';
+  if (g.type === 'Polygon' || g.type === 'MultiPolygon') return 'polygon';
+  return null;
+}
+
+const cleanFeatures = (list) => (Array.isArray(list) ? list.filter((f) => f && typeof f === 'object') : []);
+
+/** Most common geometry kind in a layer */
+function layerKind(features) {
+  const n = { point: 0, line: 0, polygon: 0 };
+  features.slice(0, 500).forEach((f) => { const k = geomKind(f.geometry); if (k) n[k] += 1; });
+  const best = Object.entries(n).sort((a, b) => b[1] - a[1])[0];
+  return best[1] ? best[0] : null;
+}
+
+/**
+ * Read a .zip (shapefiles), .geojson/.json or .csv.
+ * Returns { layers: [{ name, kind, features }], table } where table=true means CSV rows without geometry.
+ * A zip can hold several shapefiles: each becomes a layer. Anything in the zip that is not a layer is ignored.
+ */
+export async function readLayers(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.zip')) {
+    const { default: shp } = await import('shpjs');
+    let out;
+    try {
+      out = await shp(await file.arrayBuffer());
+    } catch (e) {
+      if (/no layers/i.test(e.message || '')) throw new Error('No shapefile found in this zip. It must contain the .shp, .shx, .dbf and .prj files of the layer.');
+      throw new Error(`Could not read this zip: ${e.message || e}. Check that the .shp, .dbf and .prj files are all inside.`);
+    }
+    const layers = (Array.isArray(out) ? out : [out])
+      .filter((x) => x && Array.isArray(x.features))
+      .map((x, i) => {
+        const features = cleanFeatures(x.features);
+        return { name: (x.fileName || `layer ${i + 1}`).split('/').pop(), kind: layerKind(features), features };
+      })
+      .filter((l) => l.features.length);
+    if (!layers.length) throw new Error('No features found in this zip.');
+    return { layers, table: false };
+  }
+  const { features, table } = await readFile(file);
+  return { layers: [{ name: file.name, kind: table ? null : layerKind(features), features }], table };
+}
+
 /** Returns { features, table } where table=true means rows without geometry (CSV). */
 export async function readFile(file) {
   const name = file.name.toLowerCase();
   if (name.endsWith('.zip')) {
-    const { default: shp } = await import('shpjs');
-    const out = await shp(await file.arrayBuffer());
-    const features = Array.isArray(out) ? out.flatMap((x) => x.features) : out.features;
-    return { features, table: false };
+    const { layers } = await readLayers(file);
+    return { features: layers[0].features, table: false };
   }
   if (name.endsWith('.geojson') || name.endsWith('.json')) {
     const data = JSON.parse(await file.text());
-    const features = data.type === 'FeatureCollection' ? data.features : data.type === 'Feature' ? [data] : [];
+    const features = cleanFeatures(data.type === 'FeatureCollection' ? data.features : data.type === 'Feature' ? [data] : []);
     const sample = features.find((f) => f.geometry)?.geometry;
     const first = sample && JSON.stringify(sample.coordinates).match(/-?\d+(\.\d+)?/g)?.slice(0, 2).map(Number);
     if (first && (Math.abs(first[0]) > 180 || Math.abs(first[1]) > 90)) {
@@ -55,7 +102,7 @@ export async function readFile(file) {
 
 export const fieldsOf = (features) => {
   const keys = new Set();
-  (features || []).slice(0, 50).forEach((f) => Object.keys(f.properties || {}).forEach((k) => keys.add(k)));
+  (features || []).slice(0, 50).forEach((f) => Object.keys(f?.properties || {}).forEach((k) => keys.add(k)));
   return [...keys];
 };
 

@@ -4,7 +4,8 @@ import { api } from '../../lib/api.js';
 import { useFeedback } from '../../lib/feedback.jsx';
 import { DISTRICTS } from '../../lib/facilityTypes.js';
 import { PageHeader, Seg, Field, ErrorNote } from '../ui.jsx';
-import { readFile } from '../../lib/importFiles.js';
+import { readLayers } from '../../lib/importFiles.js';
+import LayerPicker from './LayerPicker.jsx';
 
 const LEVELS = { district: 'Districts', ta: 'Traditional Authorities' };
 
@@ -27,28 +28,35 @@ export default function AdminBoundaries({ onChanged, embedded = false }) {
   useEffect(() => { load(); }, []);
 
   const keys = useMemo(() => Object.keys(fc?.features?.[0]?.properties || {}), [fc]);
-  const polygons = (fc?.features || []).filter((f) => ['Polygon', 'MultiPolygon'].includes(f.geometry?.type));
+  const polygons = (fc?.features || []).filter((f) => ['Polygon', 'MultiPolygon'].includes(f?.geometry?.type));
   const sample = polygons.slice(0, 5).map((f) => f.properties?.[map.name]);
   const matched = level === 'district' && map.name
     ? polygons.filter((f) => DISTRICTS.some((d) => d.toLowerCase() === String(f.properties?.[map.name] || '').toLowerCase())).length : null;
+
+  const [layers, setLayers] = useState(null);
+  const [layerIdx, setLayerIdx] = useState(0);
+  function applyLayer(features) {
+    if (!features?.length) throw new Error('No features found in that file.');
+    const ks = [...new Set(features.slice(0, 50).flatMap((f) => Object.keys(f?.properties || {})))];
+    setFc({ type: 'FeatureCollection', features });
+    setMap({
+      name: level === 'ta' ? guess(ks, [/^ta/i, /^ta_?nam/i, /name_?3/i, /adm3/i, /^name$/i, /nam/i]) : guess(ks, [/^dist/i, /district/i, /name_?2/i, /adm2/i, /^name$/i, /nam/i]),
+      district: guess(ks, [/^dist/i, /district/i, /name_?2/i, /adm2/i]),
+      population: guess(ks, [/pop/i, /total/i]),
+    });
+  }
 
   async function onFile(e) {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    setError(''); setFc(null); setBusy(true);
+    setError(''); setFc(null); setLayers(null); setBusy(true);
     try {
-      const { features, table } = await readFile(file);
+      const { layers: ls, table } = await readLayers(file);
       if (table) throw new Error('Boundaries need polygons: upload a zipped shapefile or GeoJSON, not a CSV.');
-      const data = { type: 'FeatureCollection', features };
-      if (!data.features?.length) throw new Error('No features found in that file.');
-      const ks = Object.keys(data.features[0].properties || {});
-      setFc(data); setFileName(file.name); setSource(file.name.replace(/\.(zip|geojson|json)$/i, ''));
-      setMap({
-        name: level === 'ta' ? guess(ks, [/^ta/i, /^ta_?name/i, /name_?3/i, /adm3/i, /^name$/i, /name/i]) : guess(ks, [/^dist/i, /district/i, /name_?2/i, /adm2/i, /^name$/i, /name/i]),
-        district: guess(ks, [/^dist/i, /district/i, /name_?2/i, /adm2/i]),
-        population: guess(ks, [/pop/i, /total/i]),
-      });
+      const idx = Math.max(0, ls.findIndex((l) => l.kind === 'polygon'));
+      setLayers(ls); setLayerIdx(idx); setFileName(file.name); setSource(file.name.replace(/\.(zip|geojson|json)$/i, ''));
+      applyLayer(ls[idx].features);
     } catch (err) { setError(err.message || 'Could not read that file'); } finally { setBusy(false); }
   }
 
@@ -64,7 +72,7 @@ export default function AdminBoundaries({ onChanged, embedded = false }) {
       }));
       const r = await api.uploadAdminAreas({ level, source: source || null, features });
       toast(`${r.imported} ${LEVELS[level].toLowerCase()} imported`);
-      setFc(null); setFileName(''); load(); onChanged?.();
+      setFc(null); setLayers(null); setFileName(''); load(); onChanged?.();
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
 
@@ -79,7 +87,7 @@ export default function AdminBoundaries({ onChanged, embedded = false }) {
       <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
         <section className="card p-5">
           <h2 className="mb-3 font-semibold">Upload a layer</h2>
-          <Seg value={level} onChange={(v) => { setLevel(v); setFc(null); }} options={Object.entries(LEVELS)} className="mb-4 max-w-sm" />
+          <Seg value={level} onChange={(v) => { setLevel(v); setFc(null); setLayers(null); }} options={Object.entries(LEVELS)} className="mb-4 max-w-sm" />
           <button type="button" onClick={() => fileRef.current?.click()} disabled={busy}
             className="flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 p-6 text-center hover:border-gray-400">
             <FileUp size={26} className="text-gray-400" />
@@ -88,6 +96,7 @@ export default function AdminBoundaries({ onChanged, embedded = false }) {
           </button>
           <input ref={fileRef} type="file" accept=".zip,.geojson,.json" className="hidden" onChange={onFile} />
 
+          <div className="mt-3"><LayerPicker layers={layers} value={layerIdx} onChange={(i) => { setLayerIdx(i); setError(''); try { applyLayer(layers[i].features); } catch (err) { setError(err.message); } }} /></div>
           {fc && (
             <div className="mt-4 space-y-3">
               <p className="text-xs text-gray-600"><b>{polygons.length}</b> polygons found{fc.features.length !== polygons.length ? ` (${fc.features.length - polygons.length} non-polygon features skipped)` : ''}.</p>
