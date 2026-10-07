@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, GeoJSON, CircleMarker, Polyline, Polygon, Tooltip, ZoomControl, useMap, useMapEvents } from 'react-leaflet';
 import {
-  Waves, PenLine, CircleDot, Megaphone, Undo2, Trash2, Check, Download, Printer, Tent, TriangleAlert, Building2, Users, House, Info,
+  Waves, PenLine, CircleDot, History, Undo2, Trash2, Check, Download, Printer, Tent, TriangleAlert, Building2, Users, House, Info,
 } from 'lucide-react';
 import { FLOOD_STYLE } from '../lib/api.js';
 import { BASEMAPS } from '../lib/tiles.js';
@@ -46,7 +46,7 @@ export default function Scenario({ facilities, hazards, reports, onPick }) {
   const [drawDone, setDrawDone] = useState(false);
   const [centre, setCentre] = useState(null);
   const [radius, setRadius] = useState(10);
-  const [reportDays, setReportDays] = useState(7);
+  const [pastEvent, setPastEvent] = useState('all');
   const [reportKm, setReportKm] = useState(3);
   const [reachKm, setReachKm] = useState(10);
   const [displacedInput, setDisplacedInput] = useState('');
@@ -58,10 +58,10 @@ export default function Scenario({ facilities, hazards, reports, onPick }) {
     }
     if (source === 'draw') return drawDone && drawPts.length >= 3 ? [{ type: 'Polygon', coordinates: [[...drawPts.map(([la, lo]) => [lo, la]), [drawPts[0][1], drawPts[0][0]]]] }] : [];
     if (source === 'point') return centre ? [circlePolygon(centre[0], centre[1], radius)] : [];
-    const cutoff = Date.now() - reportDays * 864e5;
-    return (reports?.features || []).filter((r) => r.properties.status === 'verified' && new Date(r.properties.observed_at) >= cutoff)
+    return (reports?.features || []).filter((r) => ['verified', 'resolved'].includes(r.properties.status) && (pastEvent === 'all' || r.properties.event_name === pastEvent))
       .map((r) => { const [la, lo] = latLon(r); return circlePolygon(la, lo, reportKm, 40); });
-  }, [source, hazards, minLevel, drawDone, drawPts, centre, radius, reports, reportDays, reportKm]);
+  }, [source, hazards, minLevel, drawDone, drawPts, centre, radius, reports, pastEvent, reportKm]);
+  const pastEvents = useMemo(() => [...new Set((reports?.features || []).map((r) => r.properties.event_name).filter(Boolean))].sort(), [reports]);
 
   // ---- impact analysis
   const result = useMemo(() => {
@@ -135,7 +135,7 @@ export default function Scenario({ facilities, hazards, reports, onPick }) {
   })));
 
   const extentLabel = source === 'zones' ? `Mapped flood zones (${minLevel === 3 ? 'high' : minLevel === 2 ? 'medium and high' : 'all levels'})`
-    : source === 'draw' ? 'Drawn flood area' : source === 'point' ? `${radius} km around a point` : `Verified reports (last ${reportDays} days, ${reportKm} km)`;
+    : source === 'draw' ? 'Drawn flood area' : source === 'point' ? `${radius} km around a point` : `Past floods: ${pastEvent === 'all' ? 'all records' : pastEvent} (${reportKm} km)`;
 
   return (
     <div className="flex h-full flex-col lg:flex-row">
@@ -149,7 +149,7 @@ export default function Scenario({ facilities, hazards, reports, onPick }) {
         <section className="card no-print p-4">
           <div className="label">Flood extent</div>
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 lg:grid-cols-2">
-            {[['zones', 'Flood zones', Waves], ['draw', 'Draw area', PenLine], ['point', 'Around a point', CircleDot], ['reports', 'Flood reports', Megaphone]].map(([k, label, Icon]) => (
+            {[['zones', 'Flood zones', Waves], ['draw', 'Draw area', PenLine], ['point', 'Around a point', CircleDot], ['reports', 'Past floods', History]].map(([k, label, Icon]) => (
               <button key={k} type="button" onClick={() => setSource(k)}
                 className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition ${source === k ? 'border-ink bg-ink text-white' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
                 <Icon size={14} />{label}
@@ -182,9 +182,11 @@ export default function Scenario({ facilities, hazards, reports, onPick }) {
             )}
             {source === 'reports' && (
               <>
-                <Seg value={reportDays} onChange={setReportDays} options={[[1, '24 h'], [3, '3 days'], [7, '7 days'], [14, '14 days']]} />
+                <select className="input py-1.5" value={pastEvent} onChange={(e) => setPastEvent(e.target.value)} aria-label="Past flood event">
+                  <option value="all">All recorded floods</option>{pastEvents.map((x) => <option key={x}>{x}</option>)}
+                </select>
                 <label className="flex items-center gap-3">Buffer<input type="range" min="1" max="10" value={reportKm} onChange={(e) => setReportKm(Number(e.target.value))} className="flex-1 accent-[#0f0f10]" /><b className="w-12 text-right">{reportKm} km</b></label>
-                <p className="text-gray-400">Uses verified community flood reports.</p>
+                <p className="text-gray-400">Re-runs a past flood from confirmed flood history records, to test today&apos;s facilities and shelters against it.</p>
               </>
             )}
           </div>

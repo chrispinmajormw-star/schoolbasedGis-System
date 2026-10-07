@@ -3,15 +3,15 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import L from 'leaflet';
 import { MapContainer, TileLayer, GeoJSON, Marker, Tooltip, ZoomControl, useMap } from 'react-leaflet';
-import { Layers, LocateFixed, PanelLeftOpen, Megaphone } from 'lucide-react';
-import { CLASS_STYLE, FLOOD_STYLE, rpsColor, classify, timeAgo } from '../lib/api.js';
-import { DEPTH, ALERT_KM } from '../lib/decision.js';
+import { Layers, LocateFixed, PanelLeftOpen } from 'lucide-react';
+import { CLASS_STYLE, FLOOD_STYLE, rpsColor, classify, fmtDate } from '../lib/api.js';
+import { DEPTH } from '../lib/decision.js';
 import { BASEMAPS } from '../lib/tiles.js';
 import { typeOf, TYPE_KEYS } from '../lib/facilityTypes.js';
 import MapSearch from './MapSearch.jsx';
 
 const MALAWI_CENTER = [-13.3, 34.3];
-const DEFAULT_ON = { reports: true, districts: false };
+const DEFAULT_ON = { reports: false, districts: false };
 const size = (people, bySize) => (bySize ? Math.round(Math.min(34, Math.max(24, 18 + Math.sqrt(people) / 5))) : 26);
 
 // Type icon (white) inside a dark pin, with a ring coloured by preparedness / risk.
@@ -25,19 +25,19 @@ const TYPE_SVG = Object.fromEntries(TYPE_KEYS.map((type) => {
   return [type, html];
 }));
 
-function pinIcon(type, color, px, on, alert) {
+function pinIcon(type, color, px, on) {
   const s = on ? px + 8 : px;
   return L.divIcon({
-    className: `pin ${on ? 'pin-on' : ''} ${alert ? 'pin-alert' : ''}`,
+    className: `pin ${on ? 'pin-on' : ''}`,
     html: `<div class="pin-type" style="--c:${color}">${TYPE_SVG[type] || ''}</div>`,
     iconSize: [s, s],
     iconAnchor: [s / 2, s / 2],
   });
 }
 
-function reportIcon(depth, fresh) {
+function reportIcon(depth) {
   return L.divIcon({
-    className: `report-pin ${fresh ? 'report-fresh' : ''}`,
+    className: 'report-pin',
     html: `<div style="--c:${DEPTH[depth]?.color || '#3b82f6'}"><svg viewBox="0 0 24 24" width="14" height="14" fill="#fff"><path d="M12 2.7c-.3 0-.6.2-.8.4C9.6 5.3 6 10.2 6 14a6 6 0 0 0 12 0c0-3.8-3.6-8.7-5.2-10.9-.2-.2-.5-.4-.8-.4z"/></svg></div>`,
     iconSize: [24, 24],
     iconAnchor: [12, 12],
@@ -56,7 +56,7 @@ function FlyTo({ target }) {
 
 export default function MapView({
   facilities, hazards, selected, onSelect, layers, setLayers, initialBase = 'standard', onShowList, allFacilities, onPick,
-  reports, alerts, districtAreas, onReport,
+  reports, floodHistory, districtAreas,
 }) {
   const [base, setBase] = useState(BASEMAPS[initialBase] ? initialBase : 'standard');
   const [showLayers, setShowLayers] = useState(false);
@@ -76,7 +76,7 @@ export default function MapView({
     });
     return Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v.sum / v.n]));
   }, [allFacilities, facilities]);
-  const activeReports = (reports?.features || []).filter((r) => r.properties.status === 'verified');
+  const pastFloods = (reports?.features || []).filter((r) => ['verified', 'resolved'].includes(r.properties.status));
 
   return (
     <div className="relative h-full w-full">
@@ -113,28 +113,27 @@ export default function MapView({
           const [lon, lat] = f.geometry.coordinates;
           const color = layers.mode === 'risk' ? rpsColor(p.rps) : CLASS_STYLE[p.spi_class].color;
           const on = p.id === selected;
-          const alert = alerts?.get(p.id);
+          const flooded = floodHistory?.get(p.id);
           return (
-            <Marker key={`${p.id}-${on}-${color}-${layers.learnersSize}-${p.facility_type}-${!!alert}`} position={[lat, lon]}
-              icon={pinIcon(p.facility_type, color, size(p.people_served, layers.learnersSize), on, !!alert)}
+            <Marker key={`${p.id}-${on}-${color}-${layers.learnersSize}-${p.facility_type}`} position={[lat, lon]}
+              icon={pinIcon(p.facility_type, color, size(p.people_served, layers.learnersSize), on)}
               zIndexOffset={on ? 1000 : 0}
               eventHandlers={{ click: () => onSelect(p.id) }}>
               <Tooltip direction="top" offset={[0, -14]}>
                 <b>{p.name}</b><br />{typeOf(p.facility_type).label} · {p.spi === null ? 'Not assessed' : `SPI ${Math.round(p.spi)}%`}
-                {alert && <><br /><span style={{ color: '#1d4ed8', fontWeight: 600 }}>Flood alert · reported {alert.km.toFixed(1)} km away</span></>}
+                {flooded && <><br /><span style={{ color: '#c2410c' }}>Flooded before · last {fmtDate(flooded.last)}</span></>}
               </Tooltip>
             </Marker>
           );
         })}
 
-        {showReports && activeReports.map((r) => {
+        {showReports && pastFloods.map((r) => {
           const p = r.properties;
           const [lon, lat] = r.geometry.coordinates;
-          const fresh = Date.now() - new Date(p.observed_at) < 24 * 3600e3;
           return (
-            <Marker key={`r-${p.id}`} position={[lat, lon]} icon={reportIcon(p.depth, fresh)} zIndexOffset={500}>
+            <Marker key={`r-${p.id}`} position={[lat, lon]} icon={reportIcon(p.depth)} zIndexOffset={500}>
               <Tooltip direction="top" offset={[0, -10]}>
-                <b>Flooding reported · {DEPTH[p.depth]?.label}</b><br />{timeAgo(p.observed_at)}{p.description ? <><br />{p.description.slice(0, 90)}</> : null}
+                <b>Past flood · {fmtDate(p.observed_at)}</b><br />{DEPTH[p.depth]?.label}{p.event_name ? ` · ${p.event_name}` : ''}{p.description ? <><br />{p.description.slice(0, 90)}</> : null}
               </Tooltip>
             </Marker>
           );
@@ -142,19 +141,13 @@ export default function MapView({
         <FlyTo target={selectedFeature} />
       </MapContainer>
 
-      {/* Top-left (bottom-left on phones): facilities list + report flooding */}
-      <div className="absolute bottom-3 left-3 z-[1000] flex gap-2 sm:bottom-auto sm:top-3">
+      {/* Top-left: show the facilities list again */}
+      <div className="absolute left-3 top-3 z-[1000] flex gap-2">
         {onShowList && (
           <button type="button" onClick={onShowList} title="Show facilities list"
             className="btn hidden border border-gray-200 bg-white shadow-card md:inline-flex">
             <PanelLeftOpen size={16} />Facilities
             <span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold text-ink">{facilities?.features.length ?? 0}</span>
-          </button>
-        )}
-        {onReport && (
-          <button type="button" onClick={onReport} title="Report flooding you have seen"
-            className="btn bg-blue-600 text-white shadow-card hover:bg-blue-700">
-            <Megaphone size={16} />Report flooding
           </button>
         )}
       </div>
@@ -177,7 +170,7 @@ export default function MapView({
           <div className="pointer-events-auto w-60 space-y-2.5 rounded-2xl border border-gray-200 bg-white p-4 shadow-card">
             <label className="flex items-center justify-between">Facilities <input type="checkbox" checked={layers.facilities} onChange={() => toggle('facilities')} /></label>
             <label className="flex items-center justify-between">Flood hazard zones <input type="checkbox" checked={layers.flood} onChange={() => toggle('flood')} /></label>
-            <label className="flex items-center justify-between">Flood reports (verified) <input type="checkbox" checked={showReports} onChange={() => toggle('reports')} /></label>
+            <label className="flex items-center justify-between">Past floods (flood history) <input type="checkbox" checked={showReports} onChange={() => toggle('reports')} /></label>
             {districtAreas?.features?.length > 0 && (
               <label className="flex items-center justify-between">Districts by mean SPI <input type="checkbox" checked={showDistricts} onChange={() => toggle('districts')} /></label>
             )}
@@ -210,8 +203,8 @@ export default function MapView({
           {layers.flood && (
             <div className="flex items-center gap-2 pt-1"><span className="h-2.5 w-4 rounded-sm border border-dashed border-blue-600 bg-blue-200" />Flood zone</div>
           )}
-          {showReports && activeReports.length > 0 && (
-            <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-blue-700 ring-2 ring-blue-200" />Flood report · alert within {ALERT_KM} km</div>
+          {showReports && pastFloods.length > 0 && (
+            <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-blue-700 ring-2 ring-white" />Past flood (recorded)</div>
           )}
         </div>
       </div>

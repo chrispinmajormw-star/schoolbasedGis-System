@@ -243,26 +243,52 @@ export const HOTSPOT_STYLE = {
   'hot-99': { color: '#15803d', label: 'High-preparedness cluster (99%)' },
 };
 
-// ---------- flood alerts from verified reports ----------
-export const ALERT_KM = 5;
-export const ALERT_HOURS = 72;
-/** Map facility id -> nearest recent verified report within ALERT_KM. */
-export function floodAlerts(features, reports) {
+// ---------- flood history (confirmed records of past floods) ----------
+// SafeCom is not an early warning system: records describe floods that HAVE happened,
+// and are used to check the hazard map and to plan, never to warn.
+export const HISTORY_KM = 0.5; // a record this close to a facility counts as flooding at it
+
+const confirmed = (records) => (records?.features || []).filter((r) => ['verified', 'resolved'].includes(r.properties.status));
+
+/** Map facility id -> { count, last, maxDepth, events } from confirmed records linked to it or within HISTORY_KM. */
+export function facilityFloodHistory(features, records) {
   const out = new Map();
-  const cutoff = Date.now() - ALERT_HOURS * 3600e3;
-  const recent = (reports?.features || []).filter((r) => r.properties.status === 'verified' && new Date(r.properties.observed_at) >= cutoff);
-  if (!recent.length) return out;
+  const recs = confirmed(records);
+  if (!recs.length) return out;
   (features || []).forEach((f) => {
+    const id = f.properties.id;
     const [lat, lon] = latLon(f);
-    let best = null;
-    recent.forEach((r) => {
+    const hits = recs.filter((r) => {
+      if (r.properties.facility_id === id) return true;
       const [rl, ro] = latLon(r);
-      const d = distKm(lat, lon, rl, ro);
-      if (d <= ALERT_KM && (!best || d < best.km)) best = { km: d, report: r.properties };
+      return Math.abs(rl - lat) < 0.01 && distKm(lat, lon, rl, ro) <= HISTORY_KM;
     });
-    if (best) out.set(f.properties.id, best);
+    if (!hits.length) return;
+    const dates = hits.map((r) => r.properties.observed_at).sort();
+    out.set(id, {
+      count: hits.length,
+      last: dates[dates.length - 1],
+      maxDepth: hits.reduce((m, r) => ((DEPTH[r.properties.depth]?.level || 0) > (DEPTH[m]?.level || 0) ? r.properties.depth : m), null),
+      events: [...new Set(hits.map((r) => r.properties.event_name).filter(Boolean))],
+    });
   });
   return out;
+}
+
+/**
+ * Hazard map check: where recorded floods disagree with the mapped flood zones.
+ *  - outside: confirmed records that fall outside every mapped zone (the map may be missing these areas)
+ *  - unmappedFacilities: facilities with a flood history but mapped as outside flood zones
+ */
+export function hazardCheck(features, records, hazards, history) {
+  const zones = (hazards?.features || []).map((z) => z.geometry);
+  const recs = confirmed(records);
+  const outside = recs.filter((r) => {
+    const [lon, lat] = r.geometry.coordinates;
+    return !zones.some((g) => pointInGeometry(lon, lat, g));
+  });
+  const unmappedFacilities = (features || []).filter((f) => history?.has(f.properties.id) && !f.properties.flood_level);
+  return { total: recs.length, outside, inside: recs.length - outside.length, unmappedFacilities };
 }
 
 export const DEPTH = {
@@ -272,8 +298,8 @@ export const DEPTH = {
   above_waist: { label: 'Above the waist', short: 'Above waist', level: 4, color: '#1e3a8a' },
 };
 export const AFFECTED = {
-  homes: 'Homes', road: 'Road', bridge: 'Bridge', crops: 'Crops', facility: 'School / clinic / facility',
-  livestock: 'Livestock', people_trapped: 'People trapped',
+  homes: 'Homes', road: 'Road', bridge: 'Bridge', crops: 'Crops', facility: 'School, clinic or other facility',
+  livestock: 'Livestock', water_point: 'Water point',
 };
 
 // ---------- CSV download ----------

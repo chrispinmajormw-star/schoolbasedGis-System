@@ -3,7 +3,7 @@ import { Printer, ShieldCheck } from 'lucide-react';
 import { api, CLASS_STYLE, classify, fmtDate } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { FACILITY_TYPES, TYPE_KEYS, typeOf } from '../lib/facilityTypes.js';
-import { worklist, gapMatrix, planBudget, fmtMwk, fmtNum } from '../lib/decision.js';
+import { worklist, gapMatrix, planBudget, hazardCheck, fmtMwk, fmtNum } from '../lib/decision.js';
 import { isOverdue } from './Actions.jsx';
 import { ClassPill, FloodPill } from './ui.jsx';
 
@@ -41,7 +41,7 @@ function Trend({ rows }) {
   );
 }
 
-export default function DistrictBrief({ facilities, checklists, answers, actions, alerts }) {
+export default function DistrictBrief({ facilities, checklists, answers, actions, history, hazards, records }) {
   const { session, profile } = useAuth();
   const districts = useMemo(() => [...new Set((facilities?.features || []).map((f) => f.properties.district))].sort(), [facilities]);
   const [district, setDistrict] = useState('all');
@@ -67,9 +67,11 @@ export default function DistrictBrief({ facilities, checklists, answers, actions
       return { t, n: list.length, assessed: a.length, mean: a.length ? Math.round((10 * a.reduce((s, p) => s + p.spi, 0)) / a.length) / 10 : null };
     }).filter((r) => r.n);
     const acts = (actions || []).filter((a) => district === 'all' || a.district === district);
-    const alertCount = ps.filter((p) => alerts?.has(p.id)).length;
-    return { ps, assessed, mean, atRisk, inZone, shelters, capFlooded, capSafe, wl, topGaps, plan, byType, acts, alertCount };
-  }, [facilities, checklists, answers, actions, alerts, district]);
+    const floodedBefore = ps.filter((p) => history?.has(p.id));
+    const floodedUnmapped = floodedBefore.filter((p) => !p.flood_level);
+    const check = hazardCheck(feats, records, hazards, history);
+    return { ps, assessed, mean, atRisk, inZone, shelters, capFlooded, capSafe, wl, topGaps, plan, byType, acts, floodedBefore, floodedUnmapped, check };
+  }, [facilities, checklists, answers, actions, history, hazards, records, district]);
 
   const place = district === 'all' ? 'Malawi (all districts)' : `${district} District`;
   const openActs = d.acts.filter((a) => a.status !== 'done');
@@ -82,7 +84,8 @@ export default function DistrictBrief({ facilities, checklists, answers, actions
     d.wl[0] && `Highest risk priority: ${d.wl[0].p.name} (score ${d.wl[0].p.rps}, SPI ${d.wl[0].p.spi}%).`,
     d.plan.chosen.length > 0 && `A budget of MK 5M, spent on the best-value actions, would improve ${d.plan.facilities.length} facilities${d.plan.leavingLow ? ` and lift ${d.plan.leavingLow} out of the Low class` : ''}.`,
     d.capFlooded > 0 && `${fmtNum(d.capFlooded)} shelter places are inside medium/high flood zones; ${fmtNum(d.capSafe)} are outside them.`,
-    d.alertCount > 0 && `${d.alertCount} ${d.alertCount === 1 ? 'facility is' : 'facilities are'} currently on flood alert from verified community reports.`,
+    d.floodedBefore.length > 0 && `${d.floodedBefore.length} ${d.floodedBefore.length === 1 ? 'facility has' : 'facilities have'} a recorded flood history.`,
+    d.floodedUnmapped.length > 0 && `${d.floodedUnmapped.length} of them ${d.floodedUnmapped.length === 1 ? 'is' : 'are'} outside the mapped flood zones, so the flood hazard map should be reviewed there.`,
     session && overdue.length > 0 && `${overdue.length} planned ${overdue.length === 1 ? 'action is' : 'actions are'} overdue.`,
   ].filter(Boolean);
 
@@ -167,6 +170,7 @@ export default function DistrictBrief({ facilities, checklists, answers, actions
                   <div className="kv"><dt>People served by them</dt><dd>{fmtNum(d.inZone.reduce((s, p) => s + p.people_served, 0))}</dd></div>
                   <div className="kv"><dt>Shelters / places in zones</dt><dd>{d.shelters.filter((p) => p.flood_level >= 2).length} / {fmtNum(d.capFlooded)}</dd></div>
                   <div className="kv"><dt>Shelters / places outside</dt><dd>{d.shelters.filter((p) => p.flood_level < 2).length} / {fmtNum(d.capSafe)}</dd></div>
+                  <div className="kv"><dt>Facilities flooded before</dt><dd>{d.floodedBefore.length}{d.floodedUnmapped.length ? ` (${d.floodedUnmapped.length} outside mapped zones)` : ''}</dd></div>
                 </dl>
               </section>
               <section className="break-inside-avoid">

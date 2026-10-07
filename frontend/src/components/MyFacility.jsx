@@ -1,11 +1,11 @@
-import { ClipboardCheck, MapPin, TriangleAlert, BellRing, FlaskConical } from 'lucide-react';
-import { CLASS_STYLE, FLOOD_STYLE, fmtDate, timeAgo } from '../lib/api.js';
+import { ClipboardCheck, MapPin, TriangleAlert, History, FlaskConical } from 'lucide-react';
+import { CLASS_STYLE, FLOOD_STYLE, fmtDate } from '../lib/api.js';
 import { DEPTH } from '../lib/decision.js';
 import FacilityEditor from './FacilityEditor.jsx';
 import { typeOf } from '../lib/facilityTypes.js';
 import { needsAssessment } from '../lib/api.js';
 
-export default function MyFacility({ feature, onAssess, onShow, onSaved, alert, onWhatIf, onReports }) {
+export default function MyFacility({ feature, onAssess, onShow, onSaved, history, onWhatIf, onRecordFlood, onHistory }) {
   if (!feature) return <div className="p-6 text-gray-400">Loading your facility…</div>;
   const p = feature.properties;
   const cls = CLASS_STYLE[p.spi_class];
@@ -35,16 +35,17 @@ export default function MyFacility({ feature, onAssess, onShow, onSaved, alert, 
           </div>
         </div>
 
-        {alert && (
-          <div className="flex items-start gap-3 rounded-2xl bg-blue-600 p-4 text-white">
-            <BellRing size={18} className="mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <p><b>Flood alert:</b> {DEPTH[alert.report.depth]?.label.toLowerCase()} flooding was reported {alert.km.toFixed(1)} km from your facility, {timeAgo(alert.report.observed_at)}.</p>
-              <p className="mt-1 text-xs text-blue-100">Check on people, follow your emergency plan, and be ready to move to the safe assembly point.</p>
-            </div>
-            <button type="button" onClick={onReports} className="btn shrink-0 bg-white px-2.5 py-1 text-xs text-blue-700">Details</button>
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4">
+          <History size={18} className="shrink-0 text-gray-500" />
+          <div className="min-w-0 flex-1">
+            <b>Flood history</b>
+            <span className="block text-xs text-gray-500">{history
+              ? `${history.count} past flood${history.count === 1 ? '' : 's'} recorded here, last on ${fmtDate(history.last)}${history.maxDepth ? `, water up to ${DEPTH[history.maxDepth].label.toLowerCase()}` : ''}.`
+              : 'No past floods recorded at this facility. If it has flooded before, add it: it helps planners and checks the flood hazard map.'}</span>
           </div>
-        )}
+          {history && <button type="button" onClick={onHistory} className="btn-ghost px-2.5 py-1 text-xs">View</button>}
+          <button type="button" onClick={onRecordFlood} className="btn-ghost px-2.5 py-1 text-xs">Record a past flood</button>
+        </div>
 
         {p.spi !== null && p.spi < 100 && (
           <button type="button" onClick={onWhatIf} className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white p-4 text-left hover:border-gray-400">

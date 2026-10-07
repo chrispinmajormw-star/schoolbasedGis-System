@@ -57,7 +57,7 @@ export const api = {
   adminAreasSummary: () => request('/admin-areas/summary'),
   uploadAdminAreas: (data) => request('/admin-areas', { method: 'POST', body: data }),
   deleteAdminAreas: (level) => request(`/admin-areas?level=${level}`, { method: 'DELETE' }),
-  floodReports: (days = 14) => request(`/flood-reports?days=${days}`),
+  floodReports: (years) => request(`/flood-reports${years ? `?years=${years}` : ''}`),
   allFloodReports: () => request('/flood-reports/all'),
   reportFlood: (data) => request('/flood-reports', { method: 'POST', body: data }),
   reviewReport: (id, status) => request(`/flood-reports/${id}`, { method: 'PATCH', body: { status } }),

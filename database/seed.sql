@@ -62,11 +62,17 @@ FROM (VALUES ('SAMPLE-001', 600), ('SAMPLE-002', 900), ('SAMPLE-003', 500), ('SA
              ('SAMPLE-PW1', 400), ('SAMPLE-CH1', 350)) AS v(code, cap)
 WHERE f.code = v.code;
 
--- Crowdsourced flood reports (one waiting for review)
-INSERT INTO flood_reports (depth, affected, description, reporter_name, status, observed_at, reviewed_at, geom) VALUES
- ('waist', '{homes,road}', 'Shire river burst its banks near the boma. Houses flooded.', 'Sample reporter', 'verified', now() - interval '6 hours',  now() - interval '5 hours', ST_SetSRID(ST_MakePoint(35.25,-16.90),4326)),
- ('knee',  '{road,crops}', 'Road to Makhanga under water, crops submerged.',             'Sample reporter', 'verified', now() - interval '20 hours', now() - interval '18 hours', ST_SetSRID(ST_MakePoint(35.18,-16.72),4326)),
- ('ankle', '{road}',       'Water over the road after heavy rain.',                      'Sample reporter', 'pending',  now() - interval '2 hours',  NULL,                        ST_SetSRID(ST_MakePoint(34.82,-16.06),4326));
+-- Flood history: records of past floods (one waiting for review)
+INSERT INTO flood_reports (depth, affected, description, event_name, reporter_name, status, observed_at, reviewed_at, facility_id, geom)
+SELECT v.depth, v.aff::text[], v.descr, v.ev, 'Sample reporter', v.st, v.obs::timestamptz, CASE WHEN v.st = 'verified' THEN v.obs::timestamptz + interval '3 days' END,
+       (SELECT id FROM facilities WHERE code = v.code), ST_SetSRID(ST_MakePoint(v.lon, v.lat), 4326)
+FROM (VALUES
+ ('waist', '{homes,road,facility}', 'Shire river burst its banks; classrooms flooded for two weeks.', 'Cyclone Freddy, March 2023', 'verified', '2023-03-14 10:00+02', 'SAMPLE-001', 35.26, -16.92),
+ ('knee',  '{road,crops}',          'Road to Makhanga under water, crops submerged.',               'Cyclone Freddy, March 2023', 'verified', '2023-03-15 09:00+02', NULL,         35.18, -16.72),
+ ('above_waist', '{homes,facility}','Market stalls washed away.',                                   'Cyclone Ana, January 2022',  'verified', '2022-01-25 08:00+02', 'SAMPLE-MK1', 35.27, -16.93),
+ ('knee',  '{facility,road}',       'Water entered the kiosk area after heavy rain.',               NULL,                         'verified', '2024-02-02 16:00+02', 'SAMPLE-WP2', 35.31, -15.40),
+ ('ankle', '{road}',                'Water over the road after heavy rain.',                        NULL,                         'pending',  '2026-01-20 12:00+02', NULL,         34.82, -16.06)
+) AS v(depth, aff, descr, ev, st, obs, code, lon, lat);
 
 -- Action tracker examples
 INSERT INTO actions (facility_id, indicator, title, owner, due_date, status, cost_mwk)

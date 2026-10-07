@@ -23,7 +23,11 @@ psql "$DATABASE_URL" -f database/seed.sql      # fictional sample data
 
 1. `migration_004_safecom.sql` (after `migration_002_users.sql`): schools → community facilities.
 2. `migration_005_decisions.sql`: decision support — unit costs, shelter capacity, district/TA boundaries,
-   crowdsourced flood reports and the action tracker.
+   flood records and the action tracker.
+3. `migration_006_flood_history.sql`: flood records become flood history (event name, flooded facility).
+
+SafeCom is a preparedness and planning tool, **not an early warning system**: it does not forecast or send warnings
+(official warnings come from DCCMS and DoDMA).
 
 In Supabase, paste the files into the SQL Editor instead of using `psql`.
 

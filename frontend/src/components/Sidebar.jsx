@@ -1,6 +1,6 @@
 import {
   Map, LayoutDashboard, Building2, Users, FileDown, BookOpen, LogOut, LogIn, ChevronsLeft, ChevronsRight, ShieldCheck, Menu, X, UserPlus, Clock, Settings, LifeBuoy,
-  Target, Waves, ChartNoAxesCombined, Megaphone, ListChecks, FileText, MapPinned,
+  Target, Waves, ChartNoAxesCombined, History, ListChecks, FileText, MapPinned,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../lib/auth.jsx';
@@ -75,7 +75,7 @@ export default function Sidebar({
         <NavItem icon={Target} label="Priorities" active={view === 'priorities'} onClick={() => go('priorities')} collapsed={collapsed} />
         <NavItem icon={Waves} label="Flood scenario" active={view === 'scenario'} onClick={() => go('scenario')} collapsed={collapsed} />
         <NavItem icon={ChartNoAxesCombined} label="Analysis" active={view === 'analysis'} onClick={() => go('analysis')} collapsed={collapsed} />
-        <NavItem icon={Megaphone} label="Flood reports" active={view === 'reports'} onClick={() => go('reports')} collapsed={collapsed}
+        <NavItem icon={History} label="Flood history" active={view === 'history'} onClick={() => go('history')} collapsed={collapsed}
           badge={reportBadge ? reportBadge : undefined} />
         <NavItem icon={ListChecks} label="Action tracker" active={view === 'actions'} onClick={() => go('actions')} collapsed={collapsed}
           badge={overdueCount ? overdueCount : undefined} />

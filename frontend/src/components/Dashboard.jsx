@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Building2, ClipboardCheck, Gauge, Users, TriangleAlert, ChevronRight, Pencil, UserPlus, BellRing } from 'lucide-react';
+import { Building2, ClipboardCheck, Gauge, Users, TriangleAlert, ChevronRight, Pencil, UserPlus } from 'lucide-react';
 import { typeOf } from '../lib/facilityTypes.js';
 import { api, CLASS_STYLE, classify, needsAssessment, timeAgo, STALE_DAYS } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
@@ -80,7 +80,7 @@ function RecentActivity({ refreshKey, onPick }) {
   );
 }
 
-export default function Dashboard({ summary, facilities, onPick, refreshKey, alertCount = 0, go }) {
+export default function Dashboard({ summary, facilities, onPick, refreshKey }) {
   const { isAdmin } = useAuth();
   if (!summary) {
     return <div className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-28 animate-pulse rounded-2xl bg-gray-100" />)}</div>;
@@ -103,14 +103,6 @@ export default function Dashboard({ summary, facilities, onPick, refreshKey, ale
         <Stat icon={Users} label="People at risk" value={lowPrepInFloodZones.people.toLocaleString()}
           sub={`${lowPrepInFloodZones.facilities} low-SPI facilities in flood zones`} />
       </div>
-
-      {alertCount > 0 && (
-        <button type="button" onClick={() => go?.('reports')} className="mt-4 flex w-full items-center gap-3 rounded-2xl bg-blue-600 p-4 text-left text-white">
-          <BellRing size={18} className="shrink-0" />
-          <span className="flex-1"><b>{alertCount} {alertCount === 1 ? 'facility is' : 'facilities are'} on flood alert</b> from verified community reports in the last 72 hours.</span>
-          <ChevronRight size={18} />
-        </button>
-      )}
 
       {lowPrepInFloodZones.facilities > 0 && (
         <div className="mt-4 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">

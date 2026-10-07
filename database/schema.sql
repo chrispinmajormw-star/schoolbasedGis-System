@@ -1,6 +1,6 @@
 -- SafeCom (Safe Community): Mapping Community Safety & Resilience
 -- PostgreSQL / PostGIS schema for a FRESH install (Supabase SQL Editor or psql).
--- Existing databases: run the migrations (004, then 005) instead. This file deletes all data.
+-- Existing databases: run the migrations (004, 005, then 006) instead. This file deletes all data.
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 DROP VIEW IF EXISTS facility_status, school_status;
@@ -207,7 +207,7 @@ CREATE TABLE admin_areas (
 CREATE INDEX admin_areas_geom_idx ON admin_areas USING GIST (geom);
 CREATE INDEX admin_areas_level_idx ON admin_areas (level);
 
--- 4. Crowdsourced flood reports --------------------------------------------------------
+-- 4. Flood history: crowdsourced records of PAST floods (planning and hazard-map checks, not warnings) --
 CREATE TABLE flood_reports (
   id             SERIAL PRIMARY KEY,
   depth          TEXT NOT NULL CHECK (depth IN ('ankle', 'knee', 'waist', 'above_waist')),
@@ -216,6 +216,8 @@ CREATE TABLE flood_reports (
   photo_url      TEXT,
   reporter_name  TEXT,
   reporter_phone TEXT,
+  event_name     TEXT,                            -- e.g. "Cyclone Freddy, March 2023"
+  facility_id    INTEGER REFERENCES facilities(id) ON DELETE SET NULL,  -- facility that was flooded
   reported_by    UUID,                            -- signed-in reporter, if any
   status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'rejected', 'resolved')),
   reviewed_by    UUID,

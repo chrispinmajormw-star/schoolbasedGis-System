@@ -39,7 +39,7 @@ function GapChip({ g }) {
   );
 }
 
-function Worklist({ rows, onPick, onWhatIf, onAssess }) {
+function Worklist({ rows, history, onPick, onWhatIf, onAssess }) {
   const { canEdit } = useAuth();
   const [limit, setLimit] = useState(20);
   const act = rows.filter((r) => r.p.spi !== null);
@@ -60,7 +60,7 @@ function Worklist({ rows, onPick, onWhatIf, onAssess }) {
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600"><T.icon size={15} /></span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{p.name}</span>
-                    <span className="text-[11px] text-gray-400">{T.label} · {p.district} · {fmtNum(p.people_served)} people</span>
+                    <span className="text-[11px] text-gray-400">{T.label} · {p.district} · {fmtNum(p.people_served)} people{history?.has(p.id) ? ' · ' : ''}{history?.has(p.id) && <span className="font-medium text-orange-700">flooded before</span>}</span>
                   </span>
                   <span className="hidden sm:block"><FloodPill level={p.flood_level} /></span>
                   {canEdit(p.id)
@@ -91,6 +91,7 @@ function Worklist({ rows, onPick, onWhatIf, onAssess }) {
                       <span className="font-semibold">{p.name}</span>
                       <ClassPill cls={p.spi_class} spi={p.spi} />
                       <FloodPill level={p.flood_level} />
+                      {history?.has(p.id) && <span className="rounded-lg bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-800" title={`Last recorded flood: ${history.get(p.id).last.slice(0, 10)}`}>Flooded before</span>}
                     </div>
                     <div className="mt-0.5 text-[11px] text-gray-400">{T.label} · {p.district}{p.ta ? ` · ${p.ta}` : ''} · {fmtNum(p.people_served)} {T.people.toLowerCase()}</div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
@@ -291,7 +292,7 @@ function UnitCosts({ checklists, onSaved }) {
   );
 }
 
-export default function Priorities({ facilities, checklists, answers, onPick, onWhatIf, onAssess, onChanged }) {
+export default function Priorities({ facilities, checklists, answers, history, onPick, onWhatIf, onAssess, onChanged }) {
   const [tab, setTab] = useState('worklist');
   const [filters, setFilters] = useState({ district: 'all', type: 'all', floodOnly: false });
   const filtered = useMemo(() => (facilities ? {
@@ -310,7 +311,7 @@ export default function Priorities({ facilities, checklists, answers, onPick, on
       </div>
       {!facilities || !answers || !checklists
         ? <div className="h-64 animate-pulse rounded-2xl bg-gray-100" />
-        : tab === 'worklist' ? <Worklist rows={rows} onPick={onPick} onWhatIf={onWhatIf} onAssess={onAssess} />
+        : tab === 'worklist' ? <Worklist rows={rows} history={history} onPick={onPick} onWhatIf={onWhatIf} onAssess={onAssess} />
           : tab === 'budget' ? <BudgetPlanner facilities={facilities} checklists={checklists} answers={answers} filters={filters} onPick={onPick} onChanged={onChanged} />
             : <UnitCosts checklists={checklists} onSaved={onChanged} />}
       {tab === 'costs' && <p className="mt-3 flex items-center gap-1.5 text-[11px] text-gray-400"><Coins size={12} />Replace these with district procurement prices when available.</p>}

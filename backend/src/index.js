@@ -285,11 +285,14 @@ app.delete('/api/admin-areas', ...adminOnly, handle(async (req, res) => {
   res.json({ deleted: rowCount });
 }));
 
-// ---------- crowdsourced flood reports ----------
+// ---------- flood history: crowdsourced records of PAST floods ----------
+// Used to check the hazard map and to plan. SafeCom does not issue warnings: official forecasts and
+// warnings come from DCCMS and DoDMA.
 const DEPTHS = ['ankle', 'knee', 'waist', 'above_waist'];
-const AFFECTED = ['homes', 'road', 'bridge', 'crops', 'facility', 'livestock', 'people_trapped'];
-const REPORT_COLUMNS = `id, depth, affected, description, photo_url, status, observed_at, created_at, reviewed_at,
-  ST_AsGeoJSON(geom)::json AS geometry`;
+const AFFECTED = ['homes', 'road', 'bridge', 'crops', 'facility', 'livestock', 'water_point'];
+const REPORT_COLUMNS = `r.id, r.depth, r.affected, r.description, r.event_name, r.facility_id, f.name AS facility_name,
+  r.photo_url, r.status, r.observed_at, r.created_at, r.reviewed_at, ST_AsGeoJSON(r.geom)::json AS geometry`;
+const REPORT_FROM = 'flood_reports r LEFT JOIN facilities f ON f.id = r.facility_id';
 
 async function storePhoto(dataUrl, folder) {
   const m = /^data:(image\/(jpeg|png|webp));base64,(.+)$/.exec(dataUrl || '');
@@ -303,62 +306,68 @@ async function storePhoto(dataUrl, folder) {
   return supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
 }
 
-// Public: verified (and recently resolved) reports from the last N days.
+// Public: confirmed flood records (all years, or the last N years).
 app.get('/api/flood-reports', handle(async (req, res) => {
-  const days = Math.min(Math.max(Number(req.query.days) || 14, 1), 365);
+  const years = Math.min(Math.max(Number(req.query.years) || 100, 1), 100);
   const { rows } = await pool.query(
-    `SELECT ${REPORT_COLUMNS} FROM flood_reports
-      WHERE status IN ('verified', 'resolved') AND observed_at >= now() - make_interval(days => $1)
-      ORDER BY observed_at DESC`, [days]);
+    `SELECT ${REPORT_COLUMNS} FROM ${REPORT_FROM}
+      WHERE r.status IN ('verified', 'resolved') AND r.observed_at >= now() - make_interval(years => $1)
+      ORDER BY r.observed_at DESC LIMIT 5000`, [years]);
   res.json({ type: 'FeatureCollection', features: rows.map(feature) });
 }));
 
-// Admin: every report, including those waiting for review, with reporter contacts.
+// Admin: every record, including those waiting for review, with reporter contacts.
 app.get('/api/flood-reports/all', ...adminOnly, handle(async (_req, res) => {
   const { rows } = await pool.query(
-    `SELECT ${REPORT_COLUMNS}, reporter_name, reporter_phone FROM flood_reports
-      WHERE status = 'pending' OR observed_at >= now() - interval '90 days'
-      ORDER BY (status = 'pending') DESC, observed_at DESC LIMIT 500`);
+    `SELECT ${REPORT_COLUMNS}, r.reporter_name, r.reporter_phone FROM ${REPORT_FROM}
+      ORDER BY (r.status = 'pending') DESC, r.observed_at DESC LIMIT 5000`);
   res.json({ type: 'FeatureCollection', features: rows.map(feature) });
 }));
 
-// Anyone can report flooding. Reports from administrators are verified straight away.
+// Anyone can record a past flood. Records from administrators are confirmed straight away.
 app.post('/api/flood-reports', optionalUser, handle(async (req, res) => {
   const b = req.body || {};
   if (b.website) fail(400, 'Invalid request'); // honeypot
-  if (!req.user) rateLimit(`report:${req.ip}`, 10, 60 * 60 * 1000, 'Too many reports from this connection. Please try again in an hour.');
+  if (!req.user) rateLimit(`report:${req.ip}`, 10, 60 * 60 * 1000, 'Too many records from this connection. Please try again in an hour.');
   const point = coords(b.lat, b.lon);
   if (!point) fail(400, 'Set the flooded location on the map');
-  if (!DEPTHS.includes(b.depth)) fail(400, 'Choose how deep the water is');
+  if (!DEPTHS.includes(b.depth)) fail(400, 'Choose how deep the water got');
   const affected = (Array.isArray(b.affected) ? b.affected : []).filter((a) => AFFECTED.includes(a));
-  let observed = b.observed_at ? new Date(b.observed_at) : new Date();
-  if (Number.isNaN(observed.getTime()) || observed > new Date(Date.now() + 5 * 60000)) observed = new Date();
+  const observed = b.observed_at ? new Date(b.observed_at) : null;
+  if (!observed || Number.isNaN(observed.getTime())) fail(400, 'Enter the date of the flood');
+  if (observed > new Date(Date.now() + 864e5)) fail(400, 'The flood date cannot be in the future');
+  if (observed < new Date('1950-01-01')) fail(400, 'Enter a date after 1950');
+  const facilityId = int(b.facility_id ?? null, 'Facility', 1, 2147483647);
+  if (facilityId) {
+    const f = await pool.query(`SELECT 1 FROM facilities WHERE id = $1 AND status = 'active'`, [facilityId]);
+    if (!f.rowCount) fail(400, 'Facility not found');
+  }
   const photoUrl = b.photo && supabase ? await storePhoto(b.photo, 'reports') : null;
   const verified = req.user?.role === 'admin';
   const { rows } = await pool.query(
     `INSERT INTO flood_reports (depth, affected, description, photo_url, reporter_name, reporter_phone, reported_by,
-                                status, reviewed_by, reviewed_at, observed_at, geom)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, ST_SetSRID(ST_MakePoint($12,$13),4326)) RETURNING id, status`,
+                                status, reviewed_by, reviewed_at, observed_at, geom, event_name, facility_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, ST_SetSRID(ST_MakePoint($12,$13),4326), $14, $15) RETURNING id, status`,
     [b.depth, affected, text(b.description ?? null, 'Description', 1000), photoUrl,
       text(b.reporter_name ?? null, 'Name', 120) || req.user?.full_name || null, text(b.reporter_phone ?? null, 'Phone', 40),
       req.user?.id || null, verified ? 'verified' : 'pending', verified ? req.user.id : null, verified ? new Date() : null,
-      observed, point[0], point[1]]);
+      observed, point[0], point[1], text(b.event_name ?? null, 'Flood event', 120), facilityId ?? null]);
   res.status(201).json(rows[0]);
 }));
 
 app.patch('/api/flood-reports/:id', ...adminOnly, handle(async (req, res) => {
   const status = req.body?.status;
-  if (!['pending', 'verified', 'rejected', 'resolved'].includes(status)) fail(400, 'Invalid status');
+  if (!['pending', 'verified', 'rejected'].includes(status)) fail(400, 'Invalid status');
   const { rowCount } = await pool.query(
     `UPDATE flood_reports SET status = $2, reviewed_by = $3, reviewed_at = now() WHERE id = $1`,
     [idParam(req), status, req.user.id]);
-  if (!rowCount) fail(404, 'Report not found');
+  if (!rowCount) fail(404, 'Record not found');
   res.json({ ok: true });
 }));
 
 app.delete('/api/flood-reports/:id', ...adminOnly, handle(async (req, res) => {
   const { rowCount } = await pool.query('DELETE FROM flood_reports WHERE id = $1', [idParam(req)]);
-  if (!rowCount) fail(404, 'Report not found');
+  if (!rowCount) fail(404, 'Record not found');
   res.json({ ok: true });
 }));
 

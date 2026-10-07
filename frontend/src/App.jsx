@@ -22,12 +22,12 @@ import Priorities from './components/Priorities.jsx';
 import WhatIf from './components/WhatIf.jsx';
 import Scenario from './components/Scenario.jsx';
 import Analysis from './components/Analysis.jsx';
-import FloodReports from './components/FloodReports.jsx';
-import ReportFlood from './components/ReportFlood.jsx';
+import FloodHistory from './components/FloodHistory.jsx';
+import RecordFlood from './components/RecordFlood.jsx';
 import Actions, { isOverdue } from './components/Actions.jsx';
 import DistrictBrief from './components/DistrictBrief.jsx';
 import AdminBoundaries from './components/admin/AdminBoundaries.jsx';
-import { floodAlerts, maxPeopleByType } from './lib/decision.js';
+import { facilityFloodHistory, maxPeopleByType } from './lib/decision.js';
 import { loadPrefs, savePrefs } from './lib/prefs.js';
 
 const REFRESH_MS = 30000;
@@ -46,7 +46,7 @@ export default function App() {
   const [actions, setActions] = useState(null);
   const [pendingReports, setPendingReports] = useState(0);
   const [whatIf, setWhatIf] = useState(null); // facility id
-  const [reporting, setReporting] = useState(false);
+  const [recording, setRecording] = useState(null); // false | {} | { facility }
   const [selected, setSelected] = useState(() => {
     const m = /facility=(\d+)/.exec(window.location.hash);
     return m ? Number(m[1]) : null;
@@ -77,7 +77,7 @@ export default function App() {
       const [f, h, c, sum] = await Promise.all([api.facilities(), api.hazards(), api.checklists(), api.summary()]);
       setFacilities(f); setHazards(h); setChecklists(c); setSummary(sum); setError('');
       // Decision-support data: optional, so the map still works if these fail
-      const [a, r] = await Promise.allSettled([api.answers(), api.floodReports(14)]);
+      const [a, r] = await Promise.allSettled([api.answers(), api.floodReports()]);
       setAnswers(a.status === 'fulfilled' ? a.value : {});
       setReports(r.status === 'fulfilled' ? r.value : { type: 'FeatureCollection', features: [] });
       setLastUpdated(new Date());
@@ -152,10 +152,9 @@ export default function App() {
   const mineStale = mine && needsAssessment(mine.properties);
   const staleCount = useMemo(() => (facilities?.features || []).filter((f) => needsAssessment(f.properties)).length, [facilities]);
   const checklistFor = (p) => checklists?.[p.facility_type] || [];
-  const alerts = useMemo(() => floodAlerts(facilities?.features, reports), [facilities, reports]);
+  const floodHistory = useMemo(() => facilityFloodHistory(facilities?.features, reports), [facilities, reports]);
   const maxPeople = useMemo(() => maxPeopleByType(facilities?.features), [facilities]);
   const overdueCount = useMemo(() => (actions || []).filter(isOverdue).length, [actions]);
-  const myAlert = mine ? alerts.get(mine.properties.id) : null;
   const assess = (id) => setAssessing(id);
 
   // Map search looks through every facility; clear the type filter if the pick is hidden by it
@@ -169,7 +168,7 @@ export default function App() {
     <div className="flex h-full flex-col md:flex-row md:gap-3 md:p-3">
       <Sidebar view={view} setView={setView} onSignIn={() => setAuthOpen('signin')} onJoin={() => setAuthOpen('register')}
         needsAttention={mineStale} staleCount={isAdmin ? staleCount : 0} pendingCount={pendingCount}
-        reportBadge={isAdmin ? pendingReports : myAlert ? '!' : 0} overdueCount={overdueCount}
+        reportBadge={isAdmin ? pendingReports : 0} overdueCount={overdueCount}
         collapsed={prefs.sidebarCollapsed} onCollapse={(v) => setPrefs({ sidebarCollapsed: v })} />
 
       <main className="relative min-h-0 flex-1 overflow-y-auto bg-white md:overflow-hidden md:rounded-2xl md:shadow-card">
@@ -190,38 +189,41 @@ export default function App() {
             <div className="relative order-1 h-[58vh] shrink-0 md:order-2 md:h-auto md:flex-1 md:shrink">
               <MapView key={prefs.basemap} facilities={visible} hazards={hazards} selected={selected} onSelect={setSelected} layers={layers} setLayers={setLayers}
                 initialBase={prefs.basemap} onShowList={listOpen ? undefined : () => setListOpen(true)}
-                allFacilities={facilities} onPick={pickFromSearch} reports={reports} alerts={alerts} districtAreas={districtAreas}
-                onReport={() => setReporting(true)} />
+                allFacilities={facilities} onPick={pickFromSearch} reports={reports} floodHistory={floodHistory} districtAreas={districtAreas} />
               {selectedProps && (
                 <div className={`pointer-events-none absolute inset-x-3 bottom-3 z-[1000] sm:bottom-auto sm:right-auto sm:top-16`}>
                   <FacilityCard facility={selectedProps} checklist={checklistFor(selectedProps)} refreshKey={refreshKey} onClose={() => setSelected(null)}
                     onEdit={() => setEditing(selectedProps.id)} onAssess={() => setAssessing(selectedProps.id)}
-                    alert={alerts.get(selectedProps.id)} onWhatIf={() => setWhatIf(selectedProps.id)} />
+                    history={floodHistory.get(selectedProps.id)} onWhatIf={() => setWhatIf(selectedProps.id)} />
                 </div>
               )}
             </div>
           </div>
         )}
-        {view === 'dashboard' && <Dashboard summary={summary} facilities={facilities} refreshKey={refreshKey} onPick={showOnMap} alertCount={alerts.size} go={setView} />}
+        {view === 'dashboard' && <Dashboard summary={summary} facilities={facilities} refreshKey={refreshKey} onPick={showOnMap} />}
         {view === 'priorities' && (
-          <Priorities facilities={facilities} checklists={checklists} answers={answers} onPick={showOnMap} onWhatIf={setWhatIf} onAssess={assess}
+          <Priorities facilities={facilities} checklists={checklists} answers={answers} history={floodHistory} onPick={showOnMap} onWhatIf={setWhatIf} onAssess={assess}
             onChanged={() => { load(); loadActions(); }} />
         )}
         {view === 'scenario' && <Scenario facilities={facilities} hazards={hazards} reports={reports} onPick={showOnMap} />}
-        {view === 'analysis' && <Analysis facilities={facilities} checklists={checklists} answers={answers} districtAreas={districtAreas} alerts={alerts} onPick={showOnMap} />}
-        {view === 'reports' && <FloodReports reports={reports} facilities={facilities} alerts={alerts} onReport={() => setReporting(true)} onPick={showOnMap} onChanged={load} refreshKey={refreshKey} />}
+        {view === 'analysis' && <Analysis facilities={facilities} checklists={checklists} answers={answers} districtAreas={districtAreas} history={floodHistory} onPick={showOnMap} />}
+        {view === 'history' && (
+          <FloodHistory records={reports} facilities={facilities} hazards={hazards} history={floodHistory} onRecord={() => setRecording({})}
+            onPick={showOnMap} onChanged={load} refreshKey={refreshKey} />
+        )}
         {view === 'actions' && (
           <Actions actions={actions} facilities={facilities} checklists={checklists} answers={answers} onChanged={loadActions} onPick={showOnMap}
             onAssess={assess} onSignIn={() => setAuthOpen('signin')} />
         )}
-        {view === 'brief' && <DistrictBrief facilities={facilities} checklists={checklists} answers={answers} actions={actions} alerts={alerts} />}
+        {view === 'brief' && <DistrictBrief facilities={facilities} checklists={checklists} answers={answers} actions={actions} history={floodHistory} hazards={hazards} records={reports} />}
         {view === 'admin-boundaries' && isAdmin && <AdminBoundaries onChanged={() => { loadAreas(); load(); }} />}
         {view === 'about' && <About checklists={checklists} />}
         {view === 'settings' && <Settings prefs={prefs} setPrefs={setPrefs} />}
         {view === 'help' && <HelpCenter go={setView} onJoin={() => setAuthOpen('register')} />}
         {view === 'my-facility' && (
           <MyFacility feature={mine} onAssess={() => setAssessing(profile.facility_id)} onShow={() => showOnMap(profile.facility_id)} onSaved={load}
-            alert={myAlert} onWhatIf={() => setWhatIf(profile.facility_id)} onReports={() => setView('reports')} />
+            history={floodHistory.get(profile.facility_id)} onWhatIf={() => setWhatIf(profile.facility_id)}
+            onRecordFlood={() => setRecording({ facility: mine })} onHistory={() => setView('history')} />
         )}
         {view === 'admin-facilities' && isAdmin && (
           <AdminFacilities facilities={facilities} onAdd={() => setEditing('new')} onEdit={setEditing} onAssess={setAssessing} onShow={showOnMap} onChanged={load} />
@@ -241,7 +243,7 @@ export default function App() {
         <WhatIf facility={byId.get(whatIf).properties} checklist={checklistFor(byId.get(whatIf).properties)} answers={answers ? (answers[whatIf] ?? null) : undefined}
           maxPeople={maxPeople[byId.get(whatIf).properties.facility_type]} onClose={() => setWhatIf(null)} onPlanned={loadActions} />
       )}
-      {reporting && <ReportFlood onClose={() => setReporting(false)} onSent={load} />}
+      {recording && <RecordFlood facilities={facilities} records={reports} facility={recording.facility} onClose={() => setRecording(null)} onSent={load} />}
       {authOpen && <AuthPage key={authOpen} initial={authOpen} facilities={facilities} onClose={closeAuth} />}
       {recovering && <SetNewPassword />}
     </div>

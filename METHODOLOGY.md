@@ -13,6 +13,8 @@
 3. How can preparedness be combined with hazard, exposure and accessibility layers to rank where support is most urgent?
 4. Can facility managers reliably maintain this information through a crowdsourced web GIS with administrator verification?
 
+**Scope: a preparedness decision-support system, not an early warning system.** In the four elements of a people-centred early warning system (UNDRR/WMO: risk knowledge; monitoring and forecasting; warning dissemination and communication; response capability), SafeCom works only on **risk knowledge** (where facilities, hazards and past floods are) and **response capability** (how prepared each facility is, and what to improve first). It does **not** forecast hazards, monitor rivers or rainfall in real time, or disseminate warnings; in Malawi these functions belong to the Department of Climate Change and Meteorological Services (DCCMS), the Department of Water Resources and DoDMA. SafeCom operates mainly *before* the rainy season (assessment, planning, budgeting) and *after* floods (recording what happened and learning from it), and is intended to complement, not duplicate, the national early warning system.
+
 **Approach in one line:** each facility is scored against a weighted checklist made of a shared core and a few type-specific items to give an SPI (0–100). Facilities are placed on a map with flood hazard, exposure and accessibility layers. Facility managers keep the data current, and administrators verify accounts and new facilities.
 
 ## 2. Conceptual basis
@@ -131,7 +133,7 @@ RPS = 100 × H × V × E × A / 1.5
    - **Facility managers:** update only their own facility (people served, staff, contact details, location, photo, notes) and submit preparedness assessments.
    - **Administrators:** can edit every facility and manage accounts (activate, disable, reset passwords).
 4. **Audit trail.** Every assessment stores the assessor, assessment date, the submitting account and a timestamp, and the date a facility's information was last edited is recorded too. The dashboard shows recent activity to administrators.
-5. **Crowdsourced flood observations.** Anyone, signed in or not, can report flooding: location (GPS or map pin), water depth on a four-step body scale (ankle, knee, waist, above the waist), what is affected, time observed, an optional photo and optional contact details. Reports are **pending** until an administrator verifies them (for example by calling the reporter or a nearby facility). Only verified reports are shown publicly and trigger alerts. Reports from administrators are verified on entry. Anonymous submissions are rate-limited and screened with a hidden honeypot field.
+5. **Crowdsourced flood history.** Anyone, signed in or not, can record a flood that **has already happened**: location (GPS or map pin), date, event name (for example "Cyclone Freddy, March 2023"), the maximum water depth on a four-step body scale (ankle, knee, waist, above the waist), what was affected, the SafeCom facility that was flooded (if any), an optional photo and optional contact details. Records are **pending** until an administrator confirms them (for example by calling the person, a nearby facility or the district office); only confirmed records are public. Records from administrators are confirmed on entry. Anonymous submissions are rate-limited and screened with a hidden honeypot field. Flood history is used for planning and for checking the hazard map (Section 10.6), **not** for warnings.
 6. **Freshness.** Public maps refresh automatically every 30 seconds. Facilities whose last assessment is more than 180 days old, or that have never been assessed, appear in a "Needs assessment" list.
 
 ## 9. Spatial representation
@@ -191,7 +193,7 @@ Gaps are sorted by **benefit per kwacha** (benefitᵢf / costᵢf) and selected 
 
 ### 10.4 Flood scenario analysis
 
-A flood extent *Z* is defined in one of four ways: (a) mapped hazard zones at or above a chosen level; (b) a polygon drawn by the user; (c) a circle of radius *r* around a point; (d) buffers of radius *r* around verified flood reports from the last *d* days. Then:
+A flood extent *Z* is defined in one of four ways: (a) mapped hazard zones at or above a chosen level; (b) a polygon drawn by the user; (c) a circle of radius *r* around a point; (d) buffers of radius *r* around confirmed flood history records, either all records or one named past event (for example re-running Cyclone Freddy against today's facilities and shelters). Then:
 
 - **Affected facilities**: point-in-polygon test against *Z*.
 - **Shelters**: facilities with a stated shelter capacity *Kf* (schools, evacuation centres, places of worship, community halls). Shelters inside *Z* are lost; those outside are safe.
@@ -210,9 +212,10 @@ Gi* = (Σⱼ wᵢⱼ xⱼ − x̄ Σⱼ wᵢⱼ) / ( S × √[(n Σⱼ wᵢⱼ²
 
 where *xⱼ* is SPI, *x̄* and *S* the mean and standard deviation over all *n* facilities. |z| ≥ 1.645, 1.96 and 2.576 mark clusters at 90%, 95% and 99% confidence. Negative z = **cluster of low preparedness**. Results are indicative below about 30 assessed facilities, and band choice should be justified (for example, typical district radius) and tested for sensitivity.
 
-### 10.6 Alerts and action tracking
+### 10.6 Flood history, hazard-map check and action tracking
 
-- **Flood alert:** a facility within 5 km of a verified report observed in the last 72 hours is flagged on the map, its card, the manager's "My facility" page and the dashboard.
+- **Facility flood history:** a facility has a flood history if a confirmed record is linked to it or lies within 500 m of it. The count, date of the last flood and maximum depth are shown on the facility, in the worklist ("flooded before") and in district statistics. This is evidence of past exposure; it does not change the SPI or RPS formulas.
+- **Hazard-map check (validation of the flood layer):** confirmed records are tested against the mapped flood zones (point-in-polygon). Two disagreements are reported: (1) the share of records that fall **outside** every mapped zone, and (2) facilities with a flood history that are mapped as **outside** flood zones, whose RPS is therefore 0. Both indicate where the hazard layer is incomplete and should be revised, and the share of records inside mapped zones can be reported as a simple agreement measure between the hazard map and observed floods.
 - **Action tracker:** each action records facility, linked checklist item, responsible person or organisation, due date, status (to do, in progress, done), cost and completion date. Overdue = not done after the due date. Indicators for the evaluation: share of planned actions completed on time, committed vs completed cost, and SPI change at re-assessment after actions are completed.
 - **District brief:** a printable summary per district (or national) generated from the same data: key messages, top 10 priority facilities, most common gaps, SPI by type, flood exposure and shelter places, quarterly SPI trend and action plan status, for District Civil Protection Committee meetings.
 
@@ -240,7 +243,8 @@ where *xⱼ* is SPI, *x̄* and *S* the mean and standard deviation over all *n* 
 - Exposure uses people served, not the number present at the moment a hazard strikes (for example, school hours or market days).
 - Flood scenarios use straight-line distance and do not yet model road networks, cut bridges or the time of day.
 - Unit costs and the budget heuristic are planning aids; actual costs vary by location and contractor.
-- Crowdsourced flood reports depend on who has a phone and data, and on timely verification.
+- Flood history depends on who records floods (phone and data access, memory of older events) and on administrator confirmation; areas with no records are not necessarily flood-free.
+- SafeCom is not an early warning system and must not be used to warn people about current floods (Section 1).
 - Participation depends on internet access and digital literacy. Administrators can enter data on behalf of facilities to reduce this bias.
 
 ## 13. Data sources (to replace the sample data)

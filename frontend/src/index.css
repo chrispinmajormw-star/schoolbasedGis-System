@@ -77,21 +77,11 @@ body { @apply bg-canvas font-sans text-[13px] text-gray-900 antialiased; }
     linear-gradient(160deg, #26262b 0%, #0f0f10 70%);
 }
 
-/* Facility near a verified flood report: pulsing blue ring */
-.pin-alert::before {
-  content: ''; position: absolute; inset: -5px; border-radius: 9999px;
-  border: 2.5px solid #2563eb; animation: pulse 1.6s ease-out infinite;
-}
-
-/* Community flood report pin (droplet), pulsing when under 24 h old */
+/* Past flood record pin (droplet) */
 .report-pin { background: none; border: none; }
 .report-pin > div {
   display: grid; place-items: center; width: 100%; height: 100%; border-radius: 9999px;
   background: var(--c); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.3);
-}
-.report-fresh::after {
-  content: ''; position: absolute; inset: -6px; border-radius: 9999px;
-  border: 2px solid #2563eb; animation: pulse 1.8s ease-out infinite;
 }
 
 /* Printing long pages (district brief, scenario): let content flow over several pages */

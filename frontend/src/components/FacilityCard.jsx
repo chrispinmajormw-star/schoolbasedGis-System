@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
-import { ChevronUp, ChevronDown, Copy, Check, X, Pencil, ClipboardCheck, CircleCheck, CircleX, Link2, Printer, BellRing, FlaskConical } from 'lucide-react';
+import { ChevronUp, ChevronDown, Copy, Check, X, Pencil, ClipboardCheck, CircleCheck, CircleX, Link2, Printer, FlaskConical } from 'lucide-react';
 import SpiTrend from './SpiTrend.jsx';
 import { useFeedback } from '../lib/feedback.jsx';
-import { api, CLASS_STYLE, FLOOD_STYLE, fmtDate, fmtKm, timeAgo } from '../lib/api.js';
+import { api, CLASS_STYLE, FLOOD_STYLE, fmtDate, fmtKm } from '../lib/api.js';
 import { DEPTH } from '../lib/decision.js';
 import { useAuth } from '../lib/auth.jsx';
 import { ClassPill } from './ui.jsx';
 import { typeOf } from '../lib/facilityTypes.js';
 
-export default function FacilityCard({ facility: p, checklist, onClose, onEdit, onAssess, refreshKey, alert, onWhatIf }) {
+export default function FacilityCard({ facility: p, checklist, onClose, onEdit, onAssess, refreshKey, history, onWhatIf }) {
   const T = typeOf(p.facility_type);
   const { canEdit } = useAuth();
   const { toast } = useFeedback();
@@ -54,12 +54,6 @@ export default function FacilityCard({ facility: p, checklist, onClose, onEdit, 
       <div className="px-4 pb-3 pt-1">
         <div className="text-[15px] font-semibold leading-snug">{p.name}</div>
         <div className="mt-1.5"><ClassPill cls={p.spi_class} spi={p.spi} /></div>
-        {alert && (
-          <div className="mt-2.5 flex items-start gap-2 rounded-xl bg-blue-600 px-3 py-2 text-[11px] text-white">
-            <BellRing size={14} className="mt-px shrink-0" />
-            <span><b>Flood alert.</b> {DEPTH[alert.report.depth]?.label} flooding reported {alert.km.toFixed(1)} km away, {timeAgo(alert.report.observed_at)}.</span>
-          </div>
-        )}
       </div>
 
       {open && (
@@ -86,6 +80,9 @@ export default function FacilityCard({ facility: p, checklist, onClose, onEdit, 
                   <div className="kv"><dt>Contact</dt><dd>{p.contact_name || '—'}</dd></div>
                   <div className="kv"><dt>Phone</dt><dd>{p.contact_phone ? <a className="text-sky-600" href={`tel:${p.contact_phone}`}>{p.contact_phone}</a> : '—'}</dd></div>
                   <div className="kv"><dt>Flood hazard</dt><dd>{p.flood_level ? FLOOD_STYLE[p.flood_level].label : 'Outside mapped zones'}</dd></div>
+                  <div className="kv"><dt>Flood history</dt><dd className={history ? 'text-orange-700' : ''}>{history
+                    ? `${history.count} flood${history.count === 1 ? '' : 's'} recorded · last ${fmtDate(history.last)}${history.maxDepth ? ` · up to ${DEPTH[history.maxDepth].short.toLowerCase()}` : ''}`
+                    : 'None recorded'}</dd></div>
                   <div className="kv"><dt>To nearest road</dt><dd>{fmtKm(p.dist_to_road_m)}</dd></div>
                   <div className="kv"><dt>To health facility</dt><dd>{fmtKm(p.dist_to_health_m)}</dd></div>
                   <div className="kv"><dt>Risk priority</dt><dd>{p.rps ?? '—'}</dd></div>

@@ -13,16 +13,16 @@ const MALAWI_CENTER = [-13.3, 34.3];
 const reds = ['#fef2f2', '#fecaca', '#f87171', '#dc2626', '#7f1d1d'];
 const redFor = (v, max) => (v === null || v === undefined || !max ? '#e5e7eb' : reds[Math.min(4, Math.floor((v / max) * 4.999))]);
 
-export function districtStats(facilities, alerts) {
+export function districtStats(facilities, history) {
   const m = new Map();
   (facilities?.features || []).forEach((f) => {
     const p = f.properties;
-    const r = m.get(p.district) || { district: p.district, n: 0, assessed: 0, spiSum: 0, atRisk: 0, people: 0, alerts: 0, lat: 0, lon: 0, shelter: 0 };
+    const r = m.get(p.district) || { district: p.district, n: 0, assessed: 0, spiSum: 0, atRisk: 0, people: 0, flooded: 0, lat: 0, lon: 0, shelter: 0 };
     const [la, lo] = latLon(f);
     r.n += 1; r.lat += la; r.lon += lo; r.people += p.people_served; r.shelter += p.shelter_capacity || 0;
     if (p.spi !== null) { r.assessed += 1; r.spiSum += p.spi; }
     if (p.flood_level >= 2 && p.spi_class === 'low') r.atRisk += p.people_served;
-    if (alerts?.has(p.id)) r.alerts += 1;
+    if (history?.has(p.id)) r.flooded += 1;
     m.set(p.district, r);
   });
   return [...m.values()].map((r) => ({
@@ -38,9 +38,9 @@ const METRICS = {
   atRisk: { label: 'People at risk', fmt: fmtNum, better: 'low', hint: 'People served by low-preparedness facilities in medium/high flood zones' },
 };
 
-function Districts({ facilities, districtAreas, alerts }) {
+function Districts({ facilities, districtAreas, history }) {
   const [metric, setMetric] = useState('meanSpi');
-  const stats = useMemo(() => districtStats(facilities, alerts), [facilities, alerts]);
+  const stats = useMemo(() => districtStats(facilities, history), [facilities, history]);
   const byName = useMemo(() => new Map(stats.map((s) => [s.district.toLowerCase(), s])), [stats]);
   const M = METRICS[metric];
   const max = Math.max(1, ...stats.map((s) => s[metric] || 0));
@@ -81,7 +81,7 @@ function Districts({ facilities, districtAreas, alerts }) {
         <ul className="space-y-2.5">
           {sorted.map((s) => (
             <li key={s.district}>
-              <div className="mb-1 flex justify-between text-xs"><span className="font-medium">{s.district} <span className="font-normal text-gray-400">· {s.n}</span>{s.alerts > 0 && <span className="ml-1.5 rounded bg-blue-600 px-1 text-[10px] font-semibold text-white">{s.alerts} on alert</span>}</span><span>{M.fmt(s[metric])}</span></div>
+              <div className="mb-1 flex justify-between text-xs"><span className="font-medium">{s.district} <span className="font-normal text-gray-400">· {s.n}</span>{s.flooded > 0 && <span className="ml-1.5 rounded bg-orange-100 px-1 text-[10px] font-semibold text-orange-800" title="Facilities with a recorded flood history">{s.flooded} flooded before</span>}</span><span>{M.fmt(s[metric])}</span></div>
               <div className="h-2 rounded-full bg-gray-100"><div className="h-2 rounded-full" style={{ width: `${metric === 'meanSpi' ? s.meanSpi || 0 : (100 * (s[metric] || 0)) / max}%`, background: colour(s) }} /></div>
             </li>
           ))}
@@ -224,7 +224,7 @@ function Hotspots({ facilities, onPick }) {
   );
 }
 
-export default function Analysis({ facilities, checklists, answers, districtAreas, alerts, onPick }) {
+export default function Analysis({ facilities, checklists, answers, districtAreas, history, onPick }) {
   const [tab, setTab] = useState('districts');
   return (
     <div className="scroll-thin h-full overflow-y-auto p-4 sm:p-6">
@@ -233,7 +233,7 @@ export default function Analysis({ facilities, checklists, answers, districtArea
         <Seg value={tab} onChange={setTab} options={[['districts', 'Districts'], ['gaps', 'Gap heatmap'], ['hotspots', 'Hotspots']]} />
       </div>
       {!facilities ? <div className="h-96 animate-pulse rounded-2xl bg-gray-100" />
-        : tab === 'districts' ? <Districts facilities={facilities} districtAreas={districtAreas} alerts={alerts} />
+        : tab === 'districts' ? <Districts facilities={facilities} districtAreas={districtAreas} history={history} />
           : tab === 'gaps' ? (answers && checklists ? <GapHeatmap facilities={facilities} checklists={checklists} answers={answers} /> : <div className="h-96 animate-pulse rounded-2xl bg-gray-100" />)
             : <Hotspots facilities={facilities} onPick={onPick} />}
       <p className="mt-4 flex items-center gap-1.5 text-[11px] text-gray-400"><MapIcon size={12} />Upload district and TA boundaries under Admin → Boundaries to shade real district shapes.</p>
