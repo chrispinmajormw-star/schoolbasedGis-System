@@ -54,46 +54,46 @@ function MalawiFlag() {
 
 function BrandPanel({ mode, step }) {
   return (
-    <div className="auth-hero relative flex flex-col overflow-hidden rounded-[28px] p-6 text-white sm:p-8 lg:h-full lg:p-10">
+    <div className="auth-hero relative flex flex-col overflow-hidden rounded-[24px] p-5 text-white sm:p-6 lg:h-full lg:p-7">
       {/* decorative map rings and route */}
-      <svg className="pointer-events-none absolute -right-24 -top-24 h-[420px] w-[420px] opacity-[0.18]" viewBox="0 0 400 400" aria-hidden="true">
+      <svg className="pointer-events-none absolute -right-20 -top-20 h-[320px] w-[320px] opacity-[0.18]" viewBox="0 0 400 400" aria-hidden="true">
         {[60, 110, 160, 210].map((r) => <circle key={r} cx="200" cy="200" r={r} fill="none" stroke="#FFD02B" strokeWidth="1.2" strokeDasharray={r % 100 ? '4 6' : undefined} />)}
         <path d="M40 330 C 120 250, 170 300, 230 220 S 320 140, 360 90" fill="none" stroke="#fff" strokeWidth="2" strokeDasharray="6 8" />
         <circle cx="230" cy="220" r="7" fill="#FFD02B" /><circle cx="360" cy="90" r="5" fill="#fff" />
       </svg>
 
       <div className="relative flex items-center gap-2.5">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-ink"><ShieldCheck size={18} /></span>
-        <span className="text-[15px] font-semibold">SafeCom</span>
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-ink"><ShieldCheck size={16} /></span>
+        <span className="text-sm font-semibold">SafeCom</span>
       </div>
 
-      <div className="relative mt-10 lg:mt-auto">
+      <div className="relative mt-8 lg:mt-auto">
         <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3.5 py-1.5 text-xs font-medium backdrop-blur">
           <span className="h-1.5 w-1.5 rounded-full bg-accent" />
           {mode === 'register' ? 'Join us to build safer communities' : 'Safe Community · Malawi'}
         </span>
-        <h1 className="mt-5 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl lg:text-[44px]">
+        <h1 className="mt-4 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl lg:text-[34px]">
           {mode === 'register' ? 'Start your journey' : 'Welcome back'}
         </h1>
-        <p className="mt-3 max-w-md text-sm text-gray-300">
+        <p className="mt-2 max-w-md text-[13px] text-gray-300">
           {mode === 'register'
             ? 'Map your facility, keep its preparedness up to date and help your community get ready for floods.'
             : 'Mapping Community Safety & Resilience. Sign in to update your facility or manage SafeCom.'}
         </p>
 
-        <ol className="mt-8 hidden gap-3 sm:grid sm:grid-cols-3">
+        <ol className="mt-6 hidden gap-2.5 sm:grid sm:grid-cols-3">
           {STEPS.map((s, i) => {
             const n = i + 1;
             const current = mode === 'register' && n === step;
             const done = mode === 'register' && n < step;
             return (
-              <li key={s} className={`flex min-h-[124px] flex-col justify-between rounded-2xl p-4 transition ${
+              <li key={s} className={`flex min-h-[92px] flex-col justify-between rounded-xl p-3 transition ${
                 current ? 'bg-white text-ink shadow-xl' : 'border border-white/10 bg-white/[0.06] text-gray-300'}`}>
-                <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
+                <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold ${
                   current ? 'bg-accent text-ink' : done ? 'bg-accent/90 text-ink' : 'border border-white/25 text-white'}`}>
                   {done ? <Check size={14} /> : n}
                 </span>
-                <span className={`text-[13px] font-medium leading-snug ${current ? 'text-ink' : ''}`}>{s}</span>
+                <span className={`text-xs font-medium leading-snug ${current ? 'text-ink' : ''}`}>{s}</span>
               </li>
             );
           })}
@@ -125,7 +125,7 @@ function SignInForm({ onDone, goRegister }) {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form onSubmit={submit} className="space-y-3.5">
       {!enabled && <ErrorNote>Sign-in is not configured for this site yet.</ErrorNote>}
       <label className="block"><Label>Email</Label>
         <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="input-soft" placeholder="you@example.com" /></label>
@@ -340,25 +340,25 @@ export default function AuthPage({ initial = 'signin', facilities, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[3000] overflow-y-auto bg-canvas">
-      <div className="mx-auto flex min-h-full max-w-[1280px] items-center p-3 sm:p-6">
-        <div className="grid w-full gap-3 rounded-[32px] bg-white p-3 shadow-card lg:min-h-[640px] lg:grid-cols-[1.05fr_1fr]">
+      <div className="mx-auto flex min-h-full max-w-[1000px] items-center p-3 sm:p-6">
+        <div className="grid w-full gap-3 rounded-[28px] bg-white p-2.5 shadow-card lg:min-h-[520px] lg:grid-cols-[1fr_1fr]">
           <BrandPanel mode={mode} step={step} />
 
-          <div className="flex flex-col px-3 py-6 sm:px-10 lg:py-10">
+          <div className="flex flex-col px-3 py-4 sm:px-8 lg:py-6">
             <div className="flex justify-end">
               <button type="button" onClick={onClose} className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900">
                 <MapIcon size={14} />Browse the map
               </button>
             </div>
-            <div className="mx-auto my-auto w-full max-w-[420px] py-6">
-              <h2 className="text-center text-[28px] font-semibold tracking-tight">{mode === 'register' ? 'Join SafeCom' : 'Sign in'}</h2>
-              <p className="mb-7 mt-1.5 text-center text-sm text-gray-500">
+            <div className="mx-auto my-auto w-full max-w-[360px] py-4">
+              <h2 className="text-center text-[22px] font-semibold tracking-tight">{mode === 'register' ? 'Join SafeCom' : 'Sign in'}</h2>
+              <p className="mb-5 mt-1 text-center text-[13px] text-gray-500">
                 {mode === 'register' ? 'For facility managers, focal persons and committees' : 'Facility managers and administrators'}
               </p>
               {mode === 'register'
                 ? <RegisterForm facilities={facilities} step={step} setStep={setStep} onDone={onClose} goSignIn={() => go('signin')} />
                 : <SignInForm onDone={onClose} goRegister={() => go('register')} />}
-              <p className="mt-8 text-center text-[11px] leading-relaxed text-gray-400">
+              <p className="mt-6 text-center text-[10px] leading-relaxed text-gray-400">
                 SafeCom · Safe Community: Mapping Community Safety &amp; Resilience. Facility information you submit is shown on the public map after verification.
               </p>
             </div>
