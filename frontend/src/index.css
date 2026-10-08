@@ -104,3 +104,12 @@ body { @apply bg-canvas font-sans text-[13px] text-gray-900 antialiased; }
   background: #0f0f10; color: #fff; font-weight: 700; font-size: 12px;
 }
 .fac-cluster:hover > div { transform: scale(1.06); }
+
+/* District name labels on the main map */
+.leaflet-tooltip.district-label {
+  background: transparent; border: none; box-shadow: none; padding: 0;
+  font-size: 11px; font-weight: 700; color: #1f2937; letter-spacing: .02em; text-transform: uppercase;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+}
+.leaflet-tooltip.district-label::before { display: none; }
+.hide-district-labels .leaflet-tooltip.district-label { display: none; }

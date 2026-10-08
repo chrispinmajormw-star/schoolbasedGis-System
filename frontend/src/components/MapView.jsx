@@ -5,7 +5,8 @@ import L from 'leaflet';
 import { MapContainer, TileLayer, GeoJSON, Marker, Tooltip, ZoomControl } from 'react-leaflet';
 import FacilityMarkers from './FacilityMarkers.jsx';
 import ReferenceLayers, { roadStyle } from './ReferenceLayers.jsx';
-import { Layers, LocateFixed, PanelLeftOpen } from 'lucide-react';
+import DistrictLayer from './DistrictLayer.jsx';
+import { Layers, LocateFixed, PanelLeftOpen, X, MapPinned } from 'lucide-react';
 import { CLASS_STYLE, FLOOD_STYLE, rpsColor, classify, fmtDate } from '../lib/api.js';
 import { DEPTH } from '../lib/decision.js';
 import { BASEMAPS } from '../lib/tiles.js';
@@ -48,16 +49,16 @@ function reportIcon(depth) {
 
 export default function MapView({
   facilities, hazards, selected, onSelect, layers, setLayers, initialBase = 'standard', onShowList, allFacilities, onPick,
-  reports, floodHistory, districtAreas,
+  reports, floodHistory, districtAreas, districtFocus, onDistrictFocus,
 }) {
   const [base, setBase] = useState(BASEMAPS[initialBase] ? initialBase : 'standard');
   const [showLayers, setShowLayers] = useState(false);
   const [map, setMap] = useState(null);
   const toggle = (k) => setLayers((l) => ({ ...l, [k]: !(l[k] ?? DEFAULT_ON[k]) }));
   const showReports = layers.reports ?? DEFAULT_ON.reports;
-  const showDistricts = (layers.districts ?? DEFAULT_ON.districts) && districtAreas?.features?.length > 0;
   const hasDistricts = districtAreas?.features?.length > 0;
-  const showDistrictLines = (layers.districtLines ?? DEFAULT_ON.districtLines) && hasDistricts && !showDistricts;
+  const showDistrictLines = (layers.districtLines ?? DEFAULT_ON.districtLines) && hasDistricts;
+  const districtShade = layers.districtShade || 'distinct';
   const showTAs = layers.tas ?? DEFAULT_ON.tas;
   const showRoads = layers.roads ?? DEFAULT_ON.roads;
   const [roadsState, setRoadsState] = useState(null);
@@ -71,6 +72,13 @@ export default function MapView({
     });
     return Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v.sum / v.n]));
   }, [allFacilities, facilities]);
+  // Esc returns from a single district to all districts
+  useEffect(() => {
+    if (!districtFocus) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('[role=dialog],[role=alertdialog]')) onDistrictFocus?.(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [districtFocus, onDistrictFocus]);
   const pastFloods = (reports?.features || []).filter((r) => ['verified', 'resolved'].includes(r.properties.status));
 
   return (
@@ -79,19 +87,11 @@ export default function MapView({
         <TileLayer key={base} url={BASEMAPS[base].url} attribution={BASEMAPS[base].attribution} maxZoom={BASEMAPS[base].maxZoom} />
         <ZoomControl position="bottomright" />
 
-        {showDistricts && (
-          <GeoJSON key={`d-${districtAreas.features.length}-${Object.keys(districtSpi).length}`} data={districtAreas}
-            style={(f) => {
-              const v = districtSpi[f.properties.name.toLowerCase()];
-              return { color: '#475569', weight: 1, fillColor: v === undefined ? '#e5e7eb' : CLASS_STYLE[classify(v)].color, fillOpacity: 0.22 };
-            }}
-            onEachFeature={(f, layer) => {
-              const v = districtSpi[f.properties.name.toLowerCase()];
-              layer.bindTooltip(`${f.properties.name} · ${v === undefined ? 'no assessments' : `mean SPI ${Math.round(v)}%`}`, { sticky: true });
-            }} />
+        {showDistrictLines && (
+          <DistrictLayer districtAreas={districtAreas} mode={districtShade} districtSpi={districtSpi} focus={districtFocus} onFocus={onDistrictFocus} />
         )}
 
-        <ReferenceLayers districtAreas={districtAreas} showDistricts={showDistrictLines} showTAs={showTAs} showRoads={showRoads} onRoadsState={setRoadsState} />
+        <ReferenceLayers districtAreas={districtAreas} showDistricts={false} showTAs={showTAs} showRoads={showRoads} onRoadsState={setRoadsState} />
 
         {layers.flood && hazards && (
           <GeoJSON
@@ -123,14 +123,24 @@ export default function MapView({
         })}
       </MapContainer>
 
-      {/* Top-left: show the facilities list again */}
-      <div className="absolute left-3 top-3 z-[1000] flex gap-2">
+      {/* Top-left: show the facilities list again; district being viewed on its own */}
+      <div className="absolute left-3 top-[60px] z-[1000] flex flex-wrap gap-2 sm:top-3">
         {onShowList && (
           <button type="button" onClick={onShowList} title="Show facilities list"
             className="btn hidden border border-gray-200 bg-white shadow-card md:inline-flex">
             <PanelLeftOpen size={16} />Facilities
             <span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold text-ink">{facilities?.features.length ?? 0}</span>
           </button>
+        )}
+        {districtFocus && (
+          <div className="flex items-center gap-2 rounded-xl bg-ink py-1.5 pl-3 pr-1.5 text-white shadow-card">
+            <MapPinned size={15} className="text-accent" />
+            <span className="text-[13px] font-semibold">{districtFocus} District</span>
+            <span className="text-[11px] text-gray-400">{facilities?.features.length.toLocaleString() ?? 0} facilities</span>
+            <button type="button" onClick={() => onDistrictFocus(null)} className="ml-1 flex items-center gap-1 rounded-lg bg-white/10 px-2 py-1 text-[11px] font-medium hover:bg-white/20" title="Show all districts (Esc)">
+              <X size={12} />Show all
+            </button>
+          </div>
         )}
       </div>
 
@@ -155,7 +165,16 @@ export default function MapView({
             <label className="flex items-center justify-between">Past floods (flood history) <input type="checkbox" checked={showReports} onChange={() => toggle('reports')} /></label>
             <div className="border-t border-gray-100 pt-2 text-xs font-medium text-gray-500">Uploaded layers</div>
             <label className={`flex items-center justify-between ${hasDistricts ? '' : 'text-gray-300'}`}>District boundaries <input type="checkbox" disabled={!hasDistricts} checked={hasDistricts && (layers.districtLines ?? DEFAULT_ON.districtLines)} onChange={() => toggle('districtLines')} /></label>
-            {hasDistricts && <label className="flex items-center justify-between pl-3 text-gray-600">Shade by mean SPI <input type="checkbox" checked={showDistricts} onChange={() => toggle('districts')} /></label>}
+            {showDistrictLines && (
+              <div className="pl-3">
+                <div className="seg">
+                  {[['distinct', 'Colours'], ['spi', 'Mean SPI'], ['outline', 'Lines']].map(([k, label]) => (
+                    <button key={k} type="button" onClick={() => setLayers((l) => ({ ...l, districtShade: k }))} className={`seg-btn ${districtShade === k ? 'seg-btn-on' : ''}`}>{label}</button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[11px] text-gray-400">Click a district on the map to view it on its own.</p>
+              </div>
+            )}
             <label className="flex items-center justify-between">Traditional Authorities <input type="checkbox" checked={showTAs} onChange={() => toggle('tas')} /></label>
             <label className="flex items-center justify-between">Roads <input type="checkbox" checked={showRoads} onChange={() => toggle('roads')} /></label>
             {showRoads && roadsState?.zoomIn && <p className="-mt-1 text-[11px] text-gray-400">Zoom in to district level to see roads.</p>}
@@ -189,7 +208,10 @@ export default function MapView({
           {layers.flood && (
             <div className="flex items-center gap-2 pt-1"><span className="h-2.5 w-4 rounded-sm border border-dashed border-blue-600 bg-blue-200" />Flood zone</div>
           )}
-          {(showDistrictLines || showTAs) && (
+          {showDistrictLines && districtShade === 'distinct' && !districtFocus && (
+            <div className="flex items-center gap-2 pt-1"><span className="flex h-2.5 w-4 overflow-hidden rounded-sm border border-gray-500"><span className="flex-1 bg-blue-300" /><span className="flex-1 bg-red-300" /><span className="flex-1 bg-green-300" /></span>Districts</div>
+          )}
+          {((showDistrictLines && (districtShade !== 'distinct' || districtFocus)) || showTAs) && (
             <div className="flex items-center gap-2 pt-1"><span className="h-0 w-4 border-t-2 border-gray-700" />District{showTAs && <><span className="ml-1 h-0 w-4 border-t border-dashed border-slate-500" />TA</>}</div>
           )}
           {showRoads && roadsState && !roadsState.zoomIn && roadsState.count > 0 && (

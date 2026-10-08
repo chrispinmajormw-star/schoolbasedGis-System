@@ -26,7 +26,7 @@ function SpiTrack({ p }) {
   );
 }
 
-export default function FacilityList({ facilities, typeFilter, setTypeFilter, selectedId, onSelect, onAdd, onEditMine, onJoin, lastUpdated, onRefresh, onHide }) {
+export default function FacilityList({ facilities, district, typeFilter, setTypeFilter, selectedId, onSelect, onAdd, onEditMine, onJoin, lastUpdated, onRefresh, onHide }) {
   const { profile, isAdmin, session } = useAuth();
   const [q, setQ] = useState('');
   const [tab, setTab] = useState('all');
@@ -127,7 +127,7 @@ export default function FacilityList({ facilities, typeFilter, setTypeFilter, se
           </details>
         </div>
         <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
-          {typeFilter === 'all' ? 'All facilities' : typeOf(typeFilter).plural}
+          {typeFilter === 'all' ? 'All facilities' : typeOf(typeFilter).plural}{district ? ` in ${district}` : ''}
           {tab !== 'all' && ` · ${CLASS_STYLE[tab].label} preparedness`}
           <span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold text-ink">{list.length}</span>
         </div>

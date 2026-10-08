@@ -52,6 +52,7 @@ export default function App() {
     return m ? Number(m[1]) : null;
   });
   const [typeFilter, setTypeFilter] = useState('all');
+  const [districtFocus, setDistrictFocus] = useState(null); // district viewed on its own
   const [lastUpdated, setLastUpdated] = useState(null);
   const [editing, setEditing] = useState(null); // facility id | 'new' | null
   const [assessing, setAssessing] = useState(null); // facility id | null
@@ -145,8 +146,11 @@ export default function App() {
   }, [isAdmin, isActiveManager, view]);
 
   const byId = useMemo(() => new Map((facilities?.features || []).map((f) => [f.properties.id, f])), [facilities]);
-  const visible = useMemo(() => (typeFilter === 'all' || !facilities ? facilities
-    : { ...facilities, features: facilities.features.filter((f) => f.properties.facility_type === typeFilter) }), [facilities, typeFilter]);
+  // Facilities in the focused district (or all), then by type for the map
+  const inDistrict = useMemo(() => (!districtFocus || !facilities ? facilities
+    : { ...facilities, features: facilities.features.filter((f) => f.properties.district?.trim().toLowerCase() === districtFocus.trim().toLowerCase()) }), [facilities, districtFocus]);
+  const visible = useMemo(() => (typeFilter === 'all' || !inDistrict ? inDistrict
+    : { ...inDistrict, features: inDistrict.features.filter((f) => f.properties.facility_type === typeFilter) }), [inDistrict, typeFilter]);
   const selectedProps = selected ? byId.get(selected)?.properties : null;
   const mine = isActiveManager && profile.facility_id ? byId.get(profile.facility_id) : null;
   const mineStale = mine && needsAssessment(mine.properties);
@@ -160,6 +164,7 @@ export default function App() {
   // Map search looks through every facility; clear the type filter if the pick is hidden by it
   const pickFromSearch = (id) => {
     if (typeFilter !== 'all' && byId.get(id)?.properties.facility_type !== typeFilter) setTypeFilter('all');
+    if (districtFocus && byId.get(id)?.properties.district?.trim().toLowerCase() !== districtFocus.trim().toLowerCase()) setDistrictFocus(null);
     setSelected(id);
   };
   const showOnMap = (id) => { setSelected(id); setTypeFilter('all'); setView('map'); };
@@ -182,14 +187,15 @@ export default function App() {
         {view === 'map' && (
           <div className="flex flex-col md:h-full md:flex-row">
             <div className={`order-2 min-h-0 md:order-1 ${listOpen ? 'flex' : 'flex md:hidden'}`}>
-              <FacilityList facilities={facilities} typeFilter={typeFilter} setTypeFilter={setTypeFilter} selectedId={selected} onSelect={setSelected}
+              <FacilityList facilities={inDistrict} district={districtFocus} typeFilter={typeFilter} setTypeFilter={setTypeFilter} selectedId={selected} onSelect={setSelected}
                 onAdd={() => setEditing('new')} onEditMine={() => setView('my-facility')} onJoin={() => setAuthOpen('register')}
                 lastUpdated={lastUpdated} onRefresh={load} onHide={() => setListOpen(false)} />
             </div>
             <div className="relative order-1 h-[58vh] shrink-0 md:order-2 md:h-auto md:flex-1 md:shrink">
               <MapView key={prefs.basemap} facilities={visible} hazards={hazards} selected={selected} onSelect={setSelected} layers={layers} setLayers={setLayers}
                 initialBase={prefs.basemap} onShowList={listOpen ? undefined : () => setListOpen(true)}
-                allFacilities={facilities} onPick={pickFromSearch} reports={reports} floodHistory={floodHistory} districtAreas={districtAreas} />
+                allFacilities={facilities} onPick={pickFromSearch} reports={reports} floodHistory={floodHistory} districtAreas={districtAreas}
+                districtFocus={districtFocus} onDistrictFocus={(d) => { setDistrictFocus(d); if (d) setSelected(null); }} />
               {selectedProps && (
                 <div className={`pointer-events-none absolute inset-x-3 bottom-3 z-[1000] sm:bottom-auto sm:right-auto sm:top-16`}>
                   <FacilityCard facility={selectedProps} checklist={checklistFor(selectedProps)} refreshKey={refreshKey} onClose={() => setSelected(null)}
