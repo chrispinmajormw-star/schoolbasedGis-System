@@ -26,9 +26,10 @@ psql "$DATABASE_URL" -f database/seed.sql      # fictional sample data
    flood records and the action tracker.
 3. `migration_006_flood_history.sql`: flood records become flood history (event name, flooded facility).
 4. `migration_007_roads.sql`: road network layer for automatic distance to road.
+5. `migration_008_gis_layers.sql`: extra layers (rivers, settlements, land use, population) for the GIS tools.
 
 **Loading your own data:** sign in as an administrator → **Data import**, and work through the tabs:
-remove sample data → boundaries → flood zones → facilities → roads. Shapefiles (zipped with their .prj), GeoJSON
+remove sample data → boundaries → flood zones → facilities → roads → other layers. Shapefiles (zipped with their .prj), GeoJSON
 and CSV (facilities) are accepted. `database/remove_sample_data.sql` removes the sample data from the SQL Editor instead.
 
 SafeCom is a preparedness and planning tool, **not an early warning system**: it does not forecast or send warnings
@@ -46,6 +47,8 @@ Environment variables:
 | `SUPABASE_URL` | `https://<project>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Secret key, server only |
 | `CORS_ORIGIN` | `https://school-gis-system.web.app` (comma-separate several) |
+| `ANTHROPIC_API_KEY` | Optional. Lets **Analysis → GIS tools → Ask the map** read questions with Claude; without it a keyword assistant is used |
+| `ANTHROPIC_MODEL` | Optional model name for the above (default `claude-sonnet-4-5`) |
 
 ```bash
 cd backend && npm install && npm run dev      # http://localhost:4000/api/health

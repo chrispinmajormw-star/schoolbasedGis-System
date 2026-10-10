@@ -6,7 +6,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 DROP VIEW IF EXISTS facility_status, school_status;
 DROP FUNCTION IF EXISTS compute_spi(jsonb, text);
 DROP FUNCTION IF EXISTS weights_for(text);
-DROP TABLE IF EXISTS roads, actions, flood_reports, admin_areas, profiles, assessments, hazard_zones, indicator_weights, facilities, schools CASCADE;
+DROP TABLE IF EXISTS gis_features, gis_layers, roads, actions, flood_reports, admin_areas, profiles, assessments, hazard_zones, indicator_weights, facilities, schools CASCADE;
 
 -- Community facilities -------------------------------------------------------
 CREATE TABLE facilities (
@@ -238,6 +238,30 @@ CREATE TABLE roads (
   geom        geometry(MultiLineString, 4326) NOT NULL
 );
 CREATE INDEX roads_geom_idx ON roads USING GIST (geom);
+
+-- Extra GIS layers for the analysis tools (rivers, settlements, land use, population ...)
+CREATE TABLE IF NOT EXISTS gis_layers (
+  id          SERIAL PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE,
+  category    TEXT NOT NULL DEFAULT 'other',   -- river / settlement / land_use / population / market / other
+  geom_type   TEXT NOT NULL CHECK (geom_type IN ('point', 'line', 'polygon')),
+  fields      JSONB NOT NULL DEFAULT '[]',     -- [{ "name": "POP2018", "numeric": true }]
+  source      TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS gis_features (
+  id        SERIAL PRIMARY KEY,
+  layer_id  INTEGER NOT NULL REFERENCES gis_layers(id) ON DELETE CASCADE,
+  props     JSONB NOT NULL DEFAULT '{}',
+  geom      geometry(Geometry, 4326) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS gis_features_layer_idx ON gis_features (layer_id);
+CREATE INDEX IF NOT EXISTS gis_features_geom_idx ON gis_features USING GIST (geom);
+
+ALTER TABLE gis_layers   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gis_features ENABLE ROW LEVEL SECURITY;
+
 
 -- 5. Action tracker --------------------------------------------------------------------
 CREATE TABLE actions (

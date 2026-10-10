@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
 import { createClient } from '@supabase/supabase-js';
+import { registerGis } from './gis.js';
 
 // SafeCom API - Safe Community: Mapping Community Safety & Resilience
 
@@ -32,9 +33,11 @@ app.use(cors({ origin: origins.includes('*') ? '*' : origins }));
 const smallJson = express.json({ limit: '100kb' });
 const photoJson = express.json({ limit: '6mb' });
 const geoJson = express.json({ limit: '40mb' });
+const gisJson = express.json({ limit: '1mb' });
 app.use((req, res, next) => {
   const parser = req.path === '/api/admin-areas' || req.path.startsWith('/api/import/') ? geoJson
-    : req.path.endsWith('/photo') || req.path === '/api/flood-reports' ? photoJson : smallJson;
+    : req.path.endsWith('/photo') || req.path === '/api/flood-reports' ? photoJson
+      : req.path.startsWith('/api/gis/') ? gisJson : smallJson;
   return parser(req, res, next);
 });
 
@@ -1049,6 +1052,9 @@ app.delete('/api/users/:id', ...adminOnly, handle(async (req, res) => {
 }));
 
 // ---------- startup ----------
+// ---------- GIS spatial analysis tools (see gis.js) ----------
+registerGis(app, { pool, handle, fail, adminOnly, clip });
+
 async function ensurePhotoBucket() {
   if (!supabase) return;
   const { data } = await supabase.storage.getBucket(PHOTO_BUCKET);

@@ -418,6 +418,128 @@ function ImportShapes({ kind, status, onDone }) {
   );
 }
 
+// ---------- other layers for the GIS tools (rivers, settlements, land use, population ...) ----------
+const LAYER_CATEGORIES = [['river', 'Rivers'], ['settlement', 'Settlements / villages'], ['land_use', 'Land use'], ['population', 'Population'], ['other', 'Other']];
+const guessCategory = (name) => (/river|stream|water ?way|drain/i.test(name) ? 'river' : /village|settle|communit|household|town/i.test(name) ? 'settlement'
+  : /land ?use|landuse|land ?cover|lulc|crop|forest/i.test(name) ? 'land_use' : /pop/i.test(name) ? 'population' : 'other');
+const KIND_TYPES = { point: ['Point', 'MultiPoint'], line: ['LineString', 'MultiLineString'], polygon: ['Polygon', 'MultiPolygon'] };
+
+function ImportOtherLayers({ onDone }) {
+  const { toast, confirm } = useFeedback();
+  const [file, load, reset, pickLayer] = useFile('polygon');
+  const [cat, setCat] = useState(null);
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('other');
+  const [latField, setLatField] = useState('');
+  const [lonField, setLonField] = useState('');
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const refresh = () => api.gisLayers().then(setCat).catch((e) => setError(e.message));
+  useEffect(() => { refresh(); }, []);
+  const keys = useMemo(() => fieldsOf(file.features), [file.features]);
+  const layerInfo = file.layers?.[file.idx];
+
+  useEffect(() => {
+    if (!file.features) return;
+    const base = (file.layers.length > 1 ? layerInfo?.name : file.fileName).replace(/\.(zip|geojson|json|csv|txt)$/i, '').replace(/[_-]+/g, ' ').trim();
+    setName(base.charAt(0).toUpperCase() + base.slice(1));
+    setCategory(guessCategory(`${base} ${keys.join(' ')}`));
+    setLatField(guessField(keys, [/^lat/i, /latitude/i, /^y$/i, /_y$/i]));
+    setLonField(guessField(keys, [/^lon/i, /^lng/i, /longitude/i, /^x$/i, /_x$/i]));
+    setError(''); setProgress({ done: 0, total: 0 });
+  }, [file.features, file.fileName, file.layers, layerInfo, keys]);
+
+  // CSV rows become points from their latitude / longitude columns
+  const kind = file.table ? 'point' : layerInfo?.kind;
+  const features = useMemo(() => {
+    if (!file.features) return [];
+    if (file.table) {
+      return file.features.map((f) => {
+        const la = Number(f.properties[latField]); const lo = Number(f.properties[lonField]);
+        return Number.isFinite(la) && Number.isFinite(lo) && la && lo ? { type: 'Feature', properties: f.properties, geometry: { type: 'Point', coordinates: [lo, la] } } : null;
+      }).filter(Boolean);
+    }
+    return file.features.filter((f) => KIND_TYPES[kind]?.includes(f?.geometry?.type));
+  }, [file.features, file.table, latField, lonField, kind]);
+
+  const existing = (cat?.layers || []).filter((l) => l.group === 'Uploaded layers');
+  const clash = existing.find((l) => l.name.toLowerCase() === name.trim().toLowerCase());
+
+  async function run() {
+    setError('');
+    if (clash && !await confirm({ title: `Replace "${clash.name}"?`, message: `The ${clash.count.toLocaleString()} features already in this layer are replaced by this file.`, confirmLabel: 'Replace' })) return;
+    setBusy(true); setProgress({ done: 0, total: features.length });
+    let imported = 0; let skipped = 0;
+    try {
+      const { id } = await api.createGisLayer({ name: name.trim(), category, geom_type: kind, source: file.fileName });
+      await inBatches(features.map((f) => ({ properties: f.properties, geometry: f.geometry })), { maxCount: 2000, maxBytes: 5e6 }, async (batch) => {
+        const r = await api.addGisFeatures(id, batch);
+        imported += r.imported; skipped += r.skipped;
+      }, (done) => setProgress({ done, total: features.length }));
+      toast(`${imported.toLocaleString()} features loaded into "${name.trim()}"${skipped ? `, ${skipped} skipped` : ''}`);
+      reset(); refresh(); onDone();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+
+  async function remove(l) {
+    if (!await confirm({ title: `Delete "${l.name}"?`, message: 'The layer is removed from the GIS tools. This cannot be undone.', confirmLabel: 'Delete', danger: true })) return;
+    try { await api.deleteGisLayer(l.key.split(':')[1]); toast('Layer deleted'); refresh(); } catch (e) { toast(e.message, 'error'); }
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="card space-y-4 p-5">
+        <div>
+          <h2 className="font-semibold">Other layers for the GIS tools</h2>
+          <p className="text-xs text-gray-500">Rivers, settlements / villages, land use, population or any other layer. They appear in Analysis → GIS tools for measuring, selection, overlay, buffers and Thiessen polygons. Keep a population field (e.g. POP2018) to estimate people within a distance.</p>
+        </div>
+        {cat && !cat.customReady && <ErrorNote>Run database/migration_008_gis_layers.sql in the Supabase SQL Editor first.</ErrorNote>}
+        <FilePick label="Choose a file" hint="Zipped shapefile, GeoJSON, or CSV with latitude / longitude columns" busy={file.busy} fileName={file.fileName} onFile={load} />
+        <ErrorNote>{file.error}</ErrorNote>
+        <LayerPicker layers={file.layers} value={file.idx} onChange={pickLayer} />
+        {file.features && (
+          <>
+            {file.table && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FieldSelect label="Latitude" keys={keys} value={latField} onChange={setLatField} required />
+                <FieldSelect label="Longitude" keys={keys} value={lonField} onChange={setLonField} required />
+              </div>
+            )}
+            <p className="text-xs text-gray-600"><b>{features.length.toLocaleString()}</b> {kind || ''} features{file.features.length !== features.length ? ` (${file.features.length - features.length} without usable geometry ignored)` : ''} <button type="button" className="ml-2 text-gray-400 underline" onClick={reset}>Choose another file</button></p>
+            <Preview features={features.length ? features : file.features} keys={keys} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Layer name *"><input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} /></Field>
+              <Field label="Category">
+                <select className="input" value={category} onChange={(e) => setCategory(e.target.value)}>{LAYER_CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+              </Field>
+            </div>
+            {clash && <p className="flex items-start gap-1.5 text-[11px] text-amber-700"><TriangleAlert size={13} className="mt-px shrink-0" />A layer with this name exists; importing replaces it.</p>}
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" className="btn-dark" disabled={busy || !features.length || !name.trim() || !kind} onClick={run}><Upload size={15} />Import {features.length.toLocaleString()} features</button>
+              <div className="min-w-[200px] flex-1"><Progress done={progress.done} total={progress.total} label="Uploading" /></div>
+            </div>
+          </>
+        )}
+        <ErrorNote>{error}</ErrorNote>
+      </section>
+      <section className="card p-5">
+        <h3 className="mb-2 text-sm font-semibold">Layers in the system</h3>
+        {!existing.length ? <p className="text-xs text-gray-500">None yet.</p> : (
+          <ul className="divide-y divide-gray-100">
+            {existing.map((l) => (
+              <li key={l.key} className="flex items-center gap-3 py-2 text-sm">
+                <span className="min-w-0 flex-1"><b>{l.name}</b> <span className="text-[11px] text-gray-500">· {LAYER_CATEGORIES.find(([v]) => v === l.category)?.[1] || l.category} · {l.count.toLocaleString()} {l.kind}s · fields: {l.fields.map((f) => f.name).slice(0, 6).join(', ') || 'none'}</span></span>
+                <button type="button" className="btn-danger py-1 text-xs" onClick={() => remove(l)}><Trash2 size={13} />Delete</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
 // ---------- sample data ----------
 function SampleData({ status, onDone }) {
   const { toast, confirm } = useFeedback();
@@ -482,7 +604,7 @@ export default function AdminData({ onChanged }) {
 
   return (
     <div className="scroll-thin h-full overflow-y-auto p-4 sm:p-6">
-      <PageHeader title="Data import" subtitle="Load your own facilities, flood zones, roads and boundaries from shapefiles, GeoJSON or CSV. Work through the tabs from left to right." />
+      <PageHeader title="Data import" subtitle="Load your own facilities, flood zones, roads, boundaries and other layers (rivers, settlements, land use, population) from shapefiles, GeoJSON or CSV. Work through the tabs from left to right." />
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="card p-4"><div className="flex items-center gap-2 text-xs text-gray-500"><Building2 size={14} />Facilities</div><div className="mt-1 text-xl font-semibold">{status?.facilities?.toLocaleString() ?? '—'}</div>
@@ -493,7 +615,7 @@ export default function AdminData({ onChanged }) {
       </div>
 
       <div className="scroll-thin mb-4 overflow-x-auto">
-        <Seg value={tab} onChange={setTab} className="w-max" options={[['sample', '1. Remove sample data'], ['bounds', '2. Boundaries'], ['zones', '3. Flood zones'], ['facilities', '4. Facilities'], ['roads', '5. Roads']]} />
+        <Seg value={tab} onChange={setTab} className="w-max" options={[['sample', '1. Remove sample data'], ['bounds', '2. Boundaries'], ['zones', '3. Flood zones'], ['facilities', '4. Facilities'], ['roads', '5. Roads'], ['other', '6. Other layers']]} />
       </div>
 
       {tab === 'sample' && <SampleData status={status} onDone={done} />}
@@ -511,6 +633,7 @@ export default function AdminData({ onChanged }) {
           </section>
         </div>
       )}
+      {tab === 'other' && <ImportOtherLayers onDone={done} />}
       <p className="mt-4 flex items-start gap-1.5 text-[11px] text-gray-400"><Info size={12} className="mt-px shrink-0" />Shapefiles in any projection work if the .prj file is inside the zip. Large layers: simplify in QGIS first to keep each file under about 40 MB.</p>
     </div>
   );

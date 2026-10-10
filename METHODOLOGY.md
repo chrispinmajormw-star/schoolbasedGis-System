@@ -219,6 +219,26 @@ where *xⱼ* is SPI, *x̄* and *S* the mean and standard deviation over all *n* 
 - **Action tracker:** each action records facility, linked checklist item, responsible person or organisation, due date, status (to do, in progress, done), cost and completion date. Overdue = not done after the due date. Indicators for the evaluation: share of planned actions completed on time, committed vs completed cost, and SPI change at re-assessment after actions are completed.
 - **District brief:** a printable summary per district (or national) generated from the same data: key messages, top 10 priority facilities, most common gaps, SPI by type, flood exposure and shelter places, quarterly SPI trend and action plan status, for District Civil Protection Committee meetings.
 
+### 10.7 GIS spatial analysis tools (Analysis → GIS tools)
+
+The tools follow the standard vector analysis operations (measurement, retrieval, classification, overlay and neighbourhood) and run in PostGIS on the layers in the database: facilities by type, roads, flood hazard zones, districts, TAs, confirmed flood records and uploaded layers (rivers, settlements, land use, population). Distances, lengths and areas are geodesic (PostGIS `geography`, WGS 84 ellipsoid) unless stated.
+
+| Tool | Operation | Implementation |
+|---|---|---|
+| Measure | Length, area, perimeter of a drawn shape or a layer; bounding box | `ST_Length`, `ST_Area`, `ST_Perimeter` on geography; `ST_Extent` |
+| Select | Selection by attribute (=, ≠, <, ≤, >, ≥, contains; AND / OR / NOT) and by topology: inside, intersecting, adjacent, outside, within / farther than a distance | `ST_Within`, `ST_Intersects`, `ST_Touches`, `ST_DWithin` (geography) |
+| Classify | Natural breaks (Jenks), quantile or equal interval into 2–5 classes, optionally dissolving polygons of the same class | Breaks computed on the values; `ST_Union` per class |
+| Overlay | Intersect (attributes of both layers), clip, erase with a polygon layer; dissolve by a field | `ST_Intersection`, `ST_Difference`, `ST_Union` |
+| Buffer | Zoned buffers (e.g. 1, 2, 5 km), merged or per feature; counts and sums of another layer inside | Buffer in UTM zone 36S (EPSG:32736), metres; points: distance to nearest source ≤ buffer distance; polygons: area-weighted share |
+| Thiessen | Area closest to each facility, clipped to the study area; people or features in each polygon | `ST_VoronoiPolygons` (Delaunay triangulation) in EPSG:32736, clipped to district boundaries |
+| Nearest | Minimal distance from each feature to the nearest feature of another layer | KNN (`<->`) candidates, then geodesic `ST_Distance` |
+
+**Community flood risk (classification preset):** for each feature, score = 100 × (0.5 × *H*/3 + 0.25 × min(*D*ₕ, 10)/10 + 0.25 × min(*D*ᵣ, 10)/10), where *H* is the highest flood hazard level (0–3) the feature intersects, *D*ₕ the distance to the nearest health facility (km) and *D*ᵣ the distance to the nearest road (km); missing layers drop their term. The weights are a transparent default for ranking and should be agreed with the District Civil Protection Committee or tested for sensitivity.
+
+**Population estimates:** when the counted layer is a polygon layer with population (e.g. TAs), the population inside a buffer or Thiessen polygon is estimated by areal weighting (population × share of the polygon's area inside), which assumes people are spread evenly within each polygon. Point layers (villages with population) give direct sums.
+
+**Ask the map:** a question is turned into one of the tools with its settings (by keyword rules, or by Claude when an API key is configured), then the same tool runs on the database; the settings used are shown so they can be checked and changed. If a needed layer is missing the system says which layer and where to upload it, rather than estimating.
+
 ## 11. Validation plan
 
 1. **Internal consistency:** Cronbach's alpha on the 10 core items, for all facilities and per type with enough cases (`analysis/spi_analysis.py`).

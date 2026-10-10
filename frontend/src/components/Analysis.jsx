@@ -6,6 +6,7 @@ import { BASEMAPS } from '../lib/tiles.js';
 import { FACILITY_TYPES, TYPE_KEYS, typeOf } from '../lib/facilityTypes.js';
 import { gapMatrix, giStar, hotspotClass, HOTSPOT_STYLE, latLon, fmtNum, downloadCsv } from '../lib/decision.js';
 import { PageHeader, Seg, ClassPill, Empty } from './ui.jsx';
+import GisTools from './GisTools.jsx';
 
 const MALAWI_CENTER = [-13.3, 34.3];
 
@@ -225,18 +226,19 @@ function Hotspots({ facilities, onPick }) {
 }
 
 export default function Analysis({ facilities, checklists, answers, districtAreas, history, onPick }) {
-  const [tab, setTab] = useState('districts');
+  const [tab, setTab] = useState('gis');
   return (
     <div className="scroll-thin h-full overflow-y-auto p-4 sm:p-6">
-      <PageHeader title="Analysis" subtitle="Patterns across districts: where preparedness is weakest, which gaps are most common, and where low preparedness clusters." />
-      <div className="mb-4 flex">
-        <Seg value={tab} onChange={setTab} options={[['districts', 'Districts'], ['gaps', 'Gap heatmap'], ['hotspots', 'Hotspots']]} />
+      <PageHeader title="Analysis" subtitle="GIS tools (measure, select, classify, overlay, buffer, Thiessen, nearest) and patterns across districts. Ask a question in plain words or use a tool." />
+      <div className="scroll-thin mb-4 overflow-x-auto">
+        <Seg value={tab} onChange={setTab} className="w-max" options={[['gis', 'GIS tools'], ['districts', 'Districts'], ['gaps', 'Gap heatmap'], ['hotspots', 'Hotspots']]} />
       </div>
-      {!facilities ? <div className="h-96 animate-pulse rounded-2xl bg-gray-100" />
+      {tab === 'gis' ? <GisTools />
+        : !facilities ? <div className="h-96 animate-pulse rounded-2xl bg-gray-100" />
         : tab === 'districts' ? <Districts facilities={facilities} districtAreas={districtAreas} history={history} />
           : tab === 'gaps' ? (answers && checklists ? <GapHeatmap facilities={facilities} checklists={checklists} answers={answers} /> : <div className="h-96 animate-pulse rounded-2xl bg-gray-100" />)
             : <Hotspots facilities={facilities} onPick={onPick} />}
-      <p className="mt-4 flex items-center gap-1.5 text-[11px] text-gray-400"><MapIcon size={12} />Upload district and TA boundaries under Admin → Data import → Boundaries to shade real district shapes.</p>
+      {tab !== 'gis' && <p className="mt-4 flex items-center gap-1.5 text-[11px] text-gray-400"><MapIcon size={12} />Upload district and TA boundaries under Admin → Data import → Boundaries to shade real district shapes.</p>}
     </div>
   );
 }

@@ -65,6 +65,13 @@ export const api = {
   importRoads: (body) => request('/import/roads', { method: 'POST', body }),
   deleteRoads: () => request('/import/roads', { method: 'DELETE' }),
   recalcDistances: () => request('/import/distances', { method: 'POST' }),
+  // GIS analysis tools
+  gisLayers: () => request('/gis/layers'),
+  gisRun: (tool, params) => request('/gis/run', { method: 'POST', body: { tool, params } }),
+  gisAsk: (question) => request('/gis/ask', { method: 'POST', body: { question } }),
+  createGisLayer: (data) => request('/import/layers', { method: 'POST', body: data }),
+  addGisFeatures: (id, features) => request(`/import/layers/${id}/features`, { method: 'POST', body: { features } }),
+  deleteGisLayer: (id) => request(`/import/layers/${id}`, { method: 'DELETE' }),
   floodReports: (years) => request(`/flood-reports${years ? `?years=${years}` : ''}`),
   allFloodReports: () => request('/flood-reports/all'),
   reportFlood: (data) => request('/flood-reports', { method: 'POST', body: data }),
